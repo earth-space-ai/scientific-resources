@@ -1,0 +1,19 @@
+{
+  "schema_version": "1.0.0",
+  "profiles": {
+    "primary": {
+      "site_name": "Earth Space AI Scientific Resources",
+      "site_role": "Primary",
+      "canonical_url": "https://earth-space-ai.org/scientific-resources",
+      "alternate_url": "https://huangzesen.github.io/scientific-resources/",
+      "alternate_label": "Synchronized mirror"
+    },
+    "mirror": {
+      "site_name": "Scientific Resources Mirror",
+      "site_role": "Synchronized mirror",
+      "canonical_url": "https://huangzesen.github.io/scientific-resources/",
+      "alternate_url": "https://earth-space-ai.org/scientific-resources",
+      "alternate_label": "Primary site"
+    }
+  }
+}

@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scientific Resource Tracker — {{SITE_ROLE}}</title>
+<meta name="description" content="A reviewed public snapshot of {{TOTAL_COUNT}} scientific compute, credit, and grant opportunities, including {{OPEN_COUNT}} recorded as open on {{PAGE_DATE}}.">
+<meta name="resource-snapshot" content="{{PAGE_DATE}}">
+<meta name="host-profile" content="{{PROFILE_ID}}">
+<link rel="canonical" href="{{CANONICAL_URL}}">
+<link rel="alternate" href="{{ALTERNATE_URL}}" title="{{ALTERNATE_LABEL}}">
+<meta property="og:title" content="Scientific Resource Tracker — {{SITE_ROLE}}">
+<meta property="og:description" content="{{OPEN_COUNT}} open, {{UPCOMING_COUNT}} upcoming, and {{CLOSED_COUNT}} archived programs in the {{PAGE_DATE}} reviewed snapshot.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="{{CANONICAL_URL}}">
+<style>
+:root {
+  color-scheme: light;
+  --paper: #f5f0e5;
+  --surface: #fffdf7;
+  --ink: #242019;
+  --muted: #635b4d;
+  --line: #d8ceba;
+  --accent: #934514;
+  --open: #176844;
+  --open-bg: #e2efe6;
+  --upcoming: #785000;
+  --upcoming-bg: #f5ead0;
+  --closed: #5e574a;
+  --closed-bg: #ece8dc;
+  --tap: 44px;
+  --serif: Georgia, "Times New Roman", serif;
+  --sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  border-top: 4px solid var(--ink);
+  color: var(--ink);
+  background: var(--paper);
+  font: 1rem/1.55 var(--serif);
+  overflow-wrap: anywhere;
+}
+a { color: var(--accent); }
+a:hover { color: var(--ink); }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.wrap { width: min(1120px, calc(100% - 2rem)); margin-inline: auto; }
+.skip-link {
+  position: absolute;
+  left: -10000px;
+  top: 0;
+  z-index: 10;
+  padding: .75rem 1rem;
+  background: var(--ink);
+  color: white;
+}
+.skip-link:focus { left: .5rem; top: .5rem; }
+.site-header { border-bottom: 1px solid var(--line); }
+.site-header .wrap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem 1.5rem;
+  min-height: 3.5rem;
+  flex-wrap: wrap;
+}
+.site-name, .site-role, .relationship {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: .75rem;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.site-name { font-weight: 700; }
+.site-role { color: var(--muted); }
+.relationship { padding-bottom: .75rem; }
+.hero { padding: clamp(2rem, 6vw, 4.5rem) 0 2rem; }
+.eyebrow {
+  margin: 0 0 .65rem;
+  color: var(--accent);
+  font: 700 .75rem/1.4 var(--mono);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+h1 { max-width: 22ch; margin: 0 0 1rem; font-size: clamp(2rem, 6vw, 4.25rem); line-height: 1.02; }
+.lede { max-width: 66ch; margin: 0; color: var(--muted); font-size: 1.08rem; }
+.summary-list {
+  display: flex;
+  gap: .7rem 1.8rem;
+  flex-wrap: wrap;
+  padding: 0;
+  margin: 1.25rem 0 0;
+  list-style: none;
+  font: .78rem/1.4 var(--mono);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+.summary-list strong { font-size: 1rem; color: var(--ink); }
+.snapshot-note {
+  margin: 1.4rem 0 0;
+  max-width: 70ch;
+  padding: .8rem 1rem;
+  border-left: 4px solid var(--accent);
+  background: var(--surface);
+}
+.controls {
+  padding: 1rem 0;
+  border-block: 1px solid var(--line);
+  background: rgba(255, 253, 247, .55);
+}
+.controls[hidden] { display: none; }
+.controls-row { display: flex; align-items: end; gap: .75rem 1.25rem; flex-wrap: wrap; }
+.control-field { flex: 1 1 18rem; }
+.control-label { display: block; margin-bottom: .3rem; font: .7rem/1.4 var(--mono); text-transform: uppercase; }
+input[type="search"] {
+  width: 100%;
+  min-height: var(--tap);
+  padding: .55rem .75rem;
+  border: 1px solid var(--line);
+  border-radius: .35rem;
+  background: var(--surface);
+  color: var(--ink);
+  font: .9rem var(--sans);
+}
+.filter-group { display: flex; gap: .4rem; flex-wrap: wrap; }
+button {
+  min-height: var(--tap);
+  padding: .45rem .8rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font: .75rem var(--mono);
+  cursor: pointer;
+}
+button[aria-pressed="true"] { border-color: var(--ink); background: var(--ink); color: white; }
+.result-count { flex-basis: 100%; margin: 0; font: .75rem var(--mono); }
+.jump-nav { display: flex; gap: .25rem 1rem; flex-wrap: wrap; padding: 1rem 0; font: .78rem var(--mono); }
+.jump-nav a { display: inline-flex; align-items: center; min-height: var(--tap); }
+.closing-soon {
+  margin: 0 0 2rem;
+  padding: .9rem 1rem;
+  border: 1px solid #dccb9e;
+  border-left: 4px solid var(--accent);
+  border-radius: .3rem;
+  background: var(--surface);
+}
+.closing-soon h2 { margin: 0 0 .3rem; font: 700 .75rem var(--mono); text-transform: uppercase; letter-spacing: .1em; }
+.closing-soon p { margin: 0; }
+.resource-group, .archive, .methodology { scroll-margin-top: 1rem; margin-bottom: 3rem; }
+.section-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: .5rem 1rem;
+  border-bottom: 2px solid var(--ink);
+  margin-bottom: 1rem;
+}
+.section-heading h2 { margin: 0 0 .5rem; font-size: 1.45rem; }
+.section-heading p { margin: 0 0 .5rem; color: var(--muted); font: .75rem var(--mono); text-transform: uppercase; }
+.card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 1rem; }
+.card {
+  display: flex;
+  flex-direction: column;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-top-width: 3px;
+  border-radius: .4rem;
+  background: var(--surface);
+  box-shadow: 0 2px 8px rgba(36, 32, 25, .05);
+}
+.card-open { border-top-color: var(--open); }
+.card-upcoming { border-top-color: #bd8615; }
+.card-closed { border-top-color: #a59b88; }
+.card-top { display: flex; justify-content: space-between; align-items: start; gap: .5rem; }
+.provider { margin: .15rem 0 0; color: var(--muted); font: .7rem var(--mono); text-transform: uppercase; letter-spacing: .08em; }
+.badges { display: flex; justify-content: end; gap: .25rem; margin: 0; flex-wrap: wrap; }
+.badge { padding: .18rem .48rem; border-radius: 999px; font: 700 .65rem var(--mono); text-transform: uppercase; }
+.badge-open { color: var(--open); background: var(--open-bg); }
+.badge-upcoming { color: var(--upcoming); background: var(--upcoming-bg); }
+.badge-closed, .badge-group { color: var(--closed); background: var(--closed-bg); }
+.badge-soon { color: white; background: var(--accent); }
+.card h3 { margin: .6rem 0 .75rem; font-size: 1.13rem; line-height: 1.3; }
+.facts { display: grid; gap: .45rem; margin: 0 0 .7rem; }
+.facts div { display: grid; grid-template-columns: 6rem minmax(0, 1fr); gap: .75rem; }
+dt { color: var(--muted); font: .68rem var(--mono); text-transform: uppercase; }
+dd { margin: 0; }
+details { border-top: 1px dashed var(--line); margin-top: .2rem; }
+summary { display: flex; align-items: center; min-height: var(--tap); color: var(--accent); cursor: pointer; font: .72rem var(--mono); text-transform: uppercase; }
+details p { font-size: .92rem; }
+.actions { display: flex; gap: .45rem; flex-wrap: wrap; margin: auto 0 .6rem; padding-top: .5rem; }
+.button, .source-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap);
+  padding: .4rem .7rem;
+  border: 1px solid var(--line);
+  border-radius: .32rem;
+  font: .73rem var(--mono);
+  text-decoration: none;
+}
+.apply-link { border-color: var(--ink); background: var(--ink); color: white; }
+.apply-link:hover { background: var(--accent); color: white; }
+.all-sources .source-link { margin: .15rem .25rem .15rem 0; }
+.verified { margin: 0; color: var(--muted); font: .67rem var(--mono); text-transform: uppercase; }
+.is-hidden { display: none !important; }
+.empty-state { padding: 1rem; border: 1px dashed var(--line); background: var(--surface); }
+.archive > summary { border-bottom: 2px solid var(--ink); font-size: 1.35rem; font-family: var(--serif); font-weight: 700; text-transform: none; }
+.archive-note { max-width: 70ch; color: var(--muted); }
+.methodology { border-top: 2px solid var(--ink); padding-top: 1.25rem; }
+.methodology h2 { margin-top: 0; }
+.method-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem 2rem; }
+.method-grid h3 { font: 700 .78rem var(--mono); text-transform: uppercase; }
+.disclaimer { padding: 1rem; border: 1px solid var(--line); background: var(--surface); }
+footer { padding: 1.5rem 0 2.5rem; border-top: 1px solid var(--line); color: var(--muted); font: .75rem var(--mono); }
+footer .wrap { display: flex; justify-content: space-between; gap: .5rem 1rem; flex-wrap: wrap; }
+footer p { margin: 0; }
+@media (max-width: 700px) {
+  .method-grid { grid-template-columns: 1fr; }
+  .facts div { grid-template-columns: 5.25rem minmax(0, 1fr); }
+}
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+@media print {
+  .controls, .jump-nav, .skip-link { display: none !important; }
+  .card { break-inside: avoid; box-shadow: none; }
+  body { background: white; }
+}
+</style>
+</head>
+<body data-site-profile="{{PROFILE_ID}}">
+<a class="skip-link" href="#main">Skip to opportunities</a>
+<header class="site-header">
+  <div class="wrap">
+    <p class="site-name">{{SITE_NAME}}</p>
+    <p class="site-role">{{SITE_ROLE}} host profile</p>
+    <p class="relationship"><a href="{{ALTERNATE_URL}}" rel="alternate">{{ALTERNATE_LABEL}} ↗</a></p>
+  </div>
+</header>
+<main id="main">
+  <section class="hero wrap" aria-labelledby="page-title">
+    <p class="eyebrow">Compute · credits · grants — public research resources</p>
+    <h1 id="page-title"><strong>{{OPEN_COUNT}}</strong> programs were recorded as open in the reviewed snapshot.</h1>
+    <p class="lede">A static, official-source tracker for scientific compute allocations, API and cloud credits, and AI-for-science or open-science funding.</p>
+    <ul class="summary-list" aria-label="Snapshot counts">
+      <li><strong>{{TOTAL_COUNT}}</strong> total</li>
+      <li><strong>{{OPEN_COUNT}}</strong> open</li>
+      <li><strong>{{UPCOMING_COUNT}}</strong> upcoming</li>
+      <li><strong>{{CLOSED_COUNT}}</strong> archived</li>
+    </ul>
+    <p class="snapshot-note"><strong>Snapshot, not a live-status claim.</strong> Facts were reviewed for <time datetime="{{PAGE_DATE}}">{{PAGE_DATE}}</time> in {{TIMEZONE}}. Statuses can change; confirm every detail on the linked official pages.</p>
+  </section>
+
+  <section class="controls" id="controls" aria-label="Opportunity filters" hidden>
+    <div class="wrap controls-row">
+      <div class="control-field">
+        <label class="control-label" for="search">Search the snapshot</label>
+        <input id="search" type="search" autocomplete="off" placeholder="Program, provider, resource…">
+      </div>
+      <div>
+        <span class="control-label">Status</span>
+        <div class="filter-group" role="group" aria-label="Filter by status">
+          <button type="button" data-status="active" aria-pressed="true">Open + upcoming</button>
+          <button type="button" data-status="open" aria-pressed="false">Open</button>
+          <button type="button" data-status="upcoming" aria-pressed="false">Upcoming</button>
+          <button type="button" data-status="all" aria-pressed="false">All</button>
+        </div>
+      </div>
+      <button type="button" id="clear">Clear</button>
+      <p class="result-count" id="result-count" role="status" aria-live="polite"></p>
+    </div>
+  </section>
+
+  <div class="wrap">
+    <nav class="jump-nav" aria-label="Opportunity sections">
+      <a href="#heading-credits">API and cloud credits</a>
+      <a href="#heading-hpc">HPC and GPU</a>
+      <a href="#heading-grants">Grants</a>
+      <a href="#archive">Archive</a>
+      <a href="#methodology">Methodology</a>
+    </nav>
+
+    <aside class="closing-soon" aria-labelledby="closing-heading">
+      <h2 id="closing-heading">Recorded as closing within 10 days of {{PAGE_DATE}}</h2>
+      <p>{{CLOSING_SOON}}</p>
+    </aside>
+
+{{ACTIVE_SECTIONS}}
+
+    <p class="empty-state is-hidden" id="empty-state">No records match the current filter.</p>
+
+    <details class="archive" id="archive">
+      <summary>Archive — {{CLOSED_COUNT}} closed or past-cycle calls</summary>
+      <p class="archive-note">These records remain visible so that an evergreen or repurposed page is not mistaken for an open named call.</p>
+      <div class="card-grid">
+{{ARCHIVE_CARDS}}
+      </div>
+    </details>
+
+    <section class="methodology" id="methodology" aria-labelledby="methodology-heading">
+      <h2 id="methodology-heading">Methodology and status definitions</h2>
+      <div class="method-grid">
+        <div>
+          <h3>Evidence policy</h3>
+          <p>{{EVIDENCE_POLICY}}</p>
+          <h3>Endpoint rule</h3>
+          <p>{{ENDPOINT_RULE}}</p>
+        </div>
+        <div>
+          <h3>Status definitions</h3>
+          <dl>
+            <dt>Open</dt><dd>An official page exposed a current intake or stated that requests could be submitted on the snapshot date.</dd>
+            <dt>Upcoming</dt><dd>An official page promised a future round, while an intake or application route was not yet available.</dd>
+            <dt>Closed</dt><dd>The named deadline passed or the official page said that intake was closed, even if the page remained available.</dd>
+          </dl>
+        </div>
+      </div>
+      <p class="disclaimer"><strong>Independent, best-effort resource.</strong> This tracker is not affiliated with or endorsed by listed providers. Always confirm deadlines, eligibility, and terms before acting. The exact public dataset is available as <a href="/scientific-resources/public_opportunities.json">public_opportunities.json</a>, with a deterministic <a href="/scientific-resources/provenance.json">provenance manifest</a>.</p>
+    </section>
+  </div>
+</main>
+<footer>
+  <div class="wrap">
+    <p>Earth Space AI · Scientific Resources</p>
+    <p>Static page · no analytics · no tracking · <a href="/scientific-resources/public_opportunities.json">public data</a></p>
+  </div>
+</footer>
+<script type="application/json" id="dataset">{{DATASET_JSON}}</script>
+<script>
+(function () {
+  "use strict";
+  var controls = document.getElementById("controls");
+  var search = document.getElementById("search");
+  var clear = document.getElementById("clear");
+  var count = document.getElementById("result-count");
+  var empty = document.getElementById("empty-state");
+  var cards = Array.prototype.slice.call(document.querySelectorAll("article.card"));
+  var buttons = Array.prototype.slice.call(document.querySelectorAll("button[data-status]"));
+  var selectedStatus = "active";
+  controls.hidden = false;
+
+  function matches(card, query) {
+    var status = card.getAttribute("data-status");
+    var statusMatch = selectedStatus === "all" || status === selectedStatus ||
+      (selectedStatus === "active" && (status === "open" || status === "upcoming"));
+    return statusMatch && (!query || card.getAttribute("data-search").indexOf(query) !== -1);
+  }
+
+  function applyFilters() {
+    var query = search.value.trim().toLowerCase();
+    var shown = 0;
+    cards.forEach(function (card) {
+      var visible = matches(card, query);
+      card.classList.toggle("is-hidden", !visible);
+      if (visible) shown += 1;
+    });
+    document.querySelectorAll("section.resource-group").forEach(function (section) {
+      section.classList.toggle("is-hidden", section.querySelectorAll("article.card:not(.is-hidden)").length === 0);
+    });
+    count.textContent = "Showing " + shown + " of " + cards.length + " records";
+    empty.classList.toggle("is-hidden", shown !== 0);
+  }
+
+  buttons.forEach(function (button) {
+    button.addEventListener("click", function () {
+      selectedStatus = button.getAttribute("data-status");
+      buttons.forEach(function (item) { item.setAttribute("aria-pressed", String(item === button)); });
+      if (selectedStatus === "all") document.getElementById("archive").open = true;
+      applyFilters();
+    });
+  });
+  search.addEventListener("input", applyFilters);
+  clear.addEventListener("click", function () {
+    search.value = "";
+    selectedStatus = "active";
+    buttons.forEach(function (item, index) { item.setAttribute("aria-pressed", String(index === 0)); });
+    applyFilters();
+    search.focus();
+  });
+  applyFilters();
+})();
+</script>
+</body>
+</html>

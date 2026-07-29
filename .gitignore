@@ -1,0 +1,13 @@
+# Operating-system and editor files
+.DS_Store
+*.swp
+*~
+
+# Python caches and local coverage output
+__pycache__/
+*.py[cod]
+.coverage
+htmlcov/
+
+# Local test scratch space
+.test-work/
