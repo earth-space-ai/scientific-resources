@@ -23,6 +23,7 @@ EXPECTED_PROFILE_URLS = {
     "primary": "https://earth-space-ai.org/scientific-resources",
     "mirror": "https://huangzesen.github.io/scientific-resources/",
 }
+EXPECTED_SOURCE_REPOSITORY_URL = "https://github.com/earth-space-ai/scientific-resources"
 GROUP_LABELS = {
     "credits": "API & cloud research credits",
     "hpc": "HPC & GPU allocations",
@@ -157,17 +158,27 @@ def validate_profiles(config: dict) -> dict[str, dict[str, str]]:
     profiles = config["profiles"]
     if set(profiles) != set(EXPECTED_PROFILE_URLS):
         raise ValueError("site profiles must contain exactly primary and mirror")
-    required = {"site_name", "site_role", "canonical_url", "alternate_url", "alternate_label"}
+    required = {
+        "site_name",
+        "site_role",
+        "canonical_url",
+        "alternate_url",
+        "alternate_label",
+        "source_repository_url",
+    }
     for profile_id, profile in profiles.items():
         if set(profile) != required:
             raise ValueError(f"profile {profile_id} has an unexpected shape")
         if profile["canonical_url"] != EXPECTED_PROFILE_URLS[profile_id]:
             raise ValueError(f"profile {profile_id} has the wrong canonical URL")
+        if profile["source_repository_url"] != EXPECTED_SOURCE_REPOSITORY_URL:
+            raise ValueError(f"profile {profile_id} has the wrong source repository URL")
         other_id = "mirror" if profile_id == "primary" else "primary"
         if profile["alternate_url"] != EXPECTED_PROFILE_URLS[other_id]:
             raise ValueError(f"profile {profile_id} has the wrong alternate URL")
         require_public_https(profile["canonical_url"], f"profiles.{profile_id}.canonical_url")
         require_public_https(profile["alternate_url"], f"profiles.{profile_id}.alternate_url")
+        require_public_https(profile["source_repository_url"], f"profiles.{profile_id}.source_repository_url")
     return profiles
 
 
@@ -265,6 +276,7 @@ def render_html(template: str, data: dict, profile_id: str, profile: dict) -> st
         "CANONICAL_URL": esc(profile["canonical_url"]),
         "ALTERNATE_URL": esc(profile["alternate_url"]),
         "ALTERNATE_LABEL": esc(profile["alternate_label"]),
+        "SOURCE_REPOSITORY_URL": esc(profile["source_repository_url"]),
         "PAGE_DATE": esc(data["page_date"]),
         "TIMEZONE": esc(data["page_timezone"]),
         "TOTAL_COUNT": str(counts["total"]),

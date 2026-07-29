@@ -6,14 +6,16 @@
       "site_role": "Primary",
       "canonical_url": "https://earth-space-ai.org/scientific-resources",
       "alternate_url": "https://huangzesen.github.io/scientific-resources/",
-      "alternate_label": "Synchronized mirror"
+      "alternate_label": "Synchronized mirror",
+      "source_repository_url": "https://github.com/earth-space-ai/scientific-resources"
     },
     "mirror": {
       "site_name": "Scientific Resources Mirror",
       "site_role": "Synchronized mirror",
       "canonical_url": "https://huangzesen.github.io/scientific-resources/",
       "alternate_url": "https://earth-space-ai.org/scientific-resources",
-      "alternate_label": "Primary site"
+      "alternate_label": "Primary site",
+      "source_repository_url": "https://github.com/earth-space-ai/scientific-resources"
     }
   }
 }

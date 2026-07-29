@@ -8,6 +8,9 @@ from urllib.parse import urlsplit
 from helpers import DATA_PATH, DIST, PROFILES_PATH, HTMLFacts, load_json
 
 
+SOURCE_REPOSITORY_URL = "https://github.com/earth-space-ai/scientific-resources"
+
+
 class RenderContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -21,6 +24,7 @@ class RenderContractTests(unittest.TestCase):
         for profile in cls.profiles.values():
             cls.allowed_external.add(profile["canonical_url"])
             cls.allowed_external.add(profile["alternate_url"])
+            cls.allowed_external.add(profile["source_repository_url"])
 
     def parsed(self, profile):
         text = (DIST / profile / "index.html").read_text(encoding="utf-8")
@@ -97,6 +101,24 @@ class RenderContractTests(unittest.TestCase):
             self.assertNotIn('href="./public_opportunities.json"', text)
             self.assertNotIn('href="provenance.json"', text)
             self.assertNotIn('href="./provenance.json"', text)
+
+    def test_visible_source_repository_link_in_both_profiles(self):
+        for profile in ("primary", "mirror"):
+            text, facts = self.parsed(profile)
+            self.assertEqual(self.profiles[profile]["source_repository_url"], SOURCE_REPOSITORY_URL)
+            self.assertEqual(text.count("View source on GitHub"), 1)
+            self.assertIn(
+                f'<a href="{SOURCE_REPOSITORY_URL}" rel="noopener noreferrer">'
+                'View source on GitHub<span aria-hidden="true"> ↗</span></a>',
+                text,
+            )
+            repository_links = [
+                anchor
+                for anchor in facts.attrs_by_tag.get("a", [])
+                if anchor.get("href") == SOURCE_REPOSITORY_URL
+            ]
+            self.assertEqual(len(repository_links), 1)
+            self.assertEqual(set(repository_links[0].get("rel", "").split()), {"noopener", "noreferrer"})
 
     def test_accessibility_and_responsive_contract_markers(self):
         for profile in ("primary", "mirror"):
