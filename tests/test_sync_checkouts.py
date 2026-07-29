@@ -84,7 +84,8 @@ class SyncCheckoutTests(unittest.TestCase):
         result = self._run_helper()
         self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
         self.assertIn("DRY RUN: no files written", result.stdout)
-        self.assertEqual(result.stdout.count("PLAN "), 6)
+        expected_plan_count = sum(len(sync_checkouts.generated_file_names(profile)) for profile in ("primary", "mirror"))
+        self.assertEqual(result.stdout.count("PLAN "), expected_plan_count)
         self.assertFalse((self.primary / "public" / "scientific-resources").exists())
         self.assertFalse((self.mirror / "scientific-resources").exists())
         for checkout in (self.primary, self.mirror):
@@ -101,11 +102,12 @@ class SyncCheckoutTests(unittest.TestCase):
             "mirror": (self.mirror, Path("scientific-resources")),
         }
         for profile, (checkout, relative_dir) in expected.items():
-            expected_status = frozenset((relative_dir / name).as_posix() for name in sync_checkouts.FILE_NAMES)
+            file_names = sync_checkouts.generated_file_names(profile)
+            expected_status = frozenset((relative_dir / name).as_posix() for name in file_names)
             self.assertEqual(sync_checkouts.git_status_paths(checkout), expected_status)
             destination = checkout / relative_dir
-            self.assertEqual({path.name for path in destination.iterdir() if path.is_file()}, set(sync_checkouts.FILE_NAMES))
-            for name in sync_checkouts.FILE_NAMES:
+            self.assertTrue((destination / "snapshots" / "index.json").is_file())
+            for name in file_names:
                 self.assertEqual((destination / name).read_bytes(), (DIST / profile / name).read_bytes())
         self.assertEqual((self.primary / "next.config.mjs").read_bytes(), next_config_before)
 

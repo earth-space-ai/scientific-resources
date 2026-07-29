@@ -2,8 +2,8 @@
 """Plan or apply an exact local sync into clean primary and mirror checkouts.
 
 This helper performs no network access and uses no credentials. By default it
-only validates and prints a plan. Pass --apply to copy the three reviewed files
-for each host profile into its owner-controlled checkout.
+only validates and prints a plan. Pass --apply to copy the exact reviewed
+generated file tree for each host profile into its owner-controlled checkout.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DIST_ROOT = PROJECT_ROOT / "dist"
-FILE_NAMES = ("index.html", "public_opportunities.json", "provenance.json")
+ROOT_FILE_NAMES = ("index.html", "public_opportunities.json", "provenance.json")
 DESTINATION_DIRS = {
     "primary": Path("public/scientific-resources"),
     "mirror": Path("scientific-resources"),
@@ -35,10 +35,11 @@ class CheckoutPlan:
     profile: str
     checkout: Path
     destination_dir: Path
+    file_names: tuple[str, ...]
 
     @property
     def allowed_paths(self) -> frozenset[str]:
-        return frozenset((DESTINATION_DIRS[self.profile] / name).as_posix() for name in FILE_NAMES)
+        return frozenset((DESTINATION_DIRS[self.profile] / name).as_posix() for name in self.file_names)
 
     def source(self, name: str) -> Path:
         return DIST_ROOT / self.profile / name
@@ -126,7 +127,24 @@ def assert_status_confined(checkout: Path, allowed_paths: frozenset[str]) -> fro
     return observed
 
 
-def _assert_safe_destination(checkout: Path, destination_dir: Path) -> None:
+def _assert_safe_path(checkout: Path, destination: Path) -> None:
+    relative = destination.relative_to(checkout)
+    cursor = checkout
+    for part in relative.parts[:-1]:
+        cursor = cursor / part
+        if cursor.is_symlink():
+            raise SyncError(f"destination path traverses a symlink: {cursor}")
+        if cursor.exists() and not cursor.is_dir():
+            raise SyncError(f"destination ancestor is not a directory: {cursor}")
+    if destination.is_symlink():
+        raise SyncError(f"destination file is a symlink: {destination}")
+    if destination.exists() and not destination.is_file():
+        raise SyncError(f"destination is not a regular file: {destination}")
+    if destination.exists() and destination.stat(follow_symlinks=False).st_nlink != 1:
+        raise SyncError(f"destination file has hard-link aliases: {destination}")
+
+
+def _assert_safe_destination(checkout: Path, destination_dir: Path, file_names: tuple[str, ...]) -> None:
     """Reject symlink traversal and non-directory ancestors before any write."""
     relative = destination_dir.relative_to(checkout)
     cursor = checkout
@@ -136,27 +154,45 @@ def _assert_safe_destination(checkout: Path, destination_dir: Path) -> None:
             raise SyncError(f"destination path traverses a symlink: {cursor}")
         if cursor.exists() and not cursor.is_dir():
             raise SyncError(f"destination ancestor is not a directory: {cursor}")
-    for name in FILE_NAMES:
-        destination = destination_dir / name
-        if destination.is_symlink():
-            raise SyncError(f"destination file is a symlink: {destination}")
-        if destination.exists() and not destination.is_file():
-            raise SyncError(f"destination is not a regular file: {destination}")
-        if destination.exists() and destination.stat(follow_symlinks=False).st_nlink != 1:
-            raise SyncError(f"destination file has hard-link aliases: {destination}")
+    for name in file_names:
+        _assert_safe_path(checkout, destination_dir / name)
+
+
+def generated_file_names(profile: str) -> tuple[str, ...]:
+    source_dir = DIST_ROOT / profile
+    if not source_dir.is_dir():
+        raise SyncError(f"missing build profile directory: dist/{profile}")
+    names: list[str] = []
+    for path in sorted(source_dir.rglob("*")):
+        if path.is_symlink():
+            raise SyncError(f"generated output is a symlink: {path}")
+        if path.is_file():
+            relative = path.relative_to(source_dir).as_posix()
+            if relative.startswith("../") or relative == "":
+                raise SyncError(f"unsafe generated output path: {path}")
+            names.append(relative)
+    required = set(ROOT_FILE_NAMES) | {"snapshots/index.json"}
+    missing = required - set(names)
+    if missing:
+        raise SyncError(f"required generated outputs are missing for {profile}: {', '.join(sorted(missing))}")
+    for name in names:
+        if not (name in ROOT_FILE_NAMES or name.startswith("snapshots/")):
+            raise SyncError(f"unexpected generated output for exact sync: dist/{profile}/{name}")
+    return tuple(names)
 
 
 def _prepare_plan(profile: str, requested_checkout: Path) -> CheckoutPlan:
     checkout = _checkout_root(requested_checkout)
     _assert_clean_pre_state(checkout)
     source_dir = DIST_ROOT / profile
-    for name in FILE_NAMES:
+    file_names = generated_file_names(profile)
+    for name in file_names:
         source = source_dir / name
         if source.is_symlink() or not source.is_file():
             raise SyncError(f"required {profile} build file is missing or unsafe: dist/{profile}/{name}")
     destination_dir = checkout / DESTINATION_DIRS[profile]
-    _assert_safe_destination(checkout, destination_dir)
-    return CheckoutPlan(profile=profile, checkout=checkout, destination_dir=destination_dir)
+    _assert_safe_destination(checkout, destination_dir, file_names)
+    return CheckoutPlan(profile=profile, checkout=checkout, destination_dir=destination_dir, file_names=file_names)
 
 
 def _copy_exact(source: Path, destination: Path) -> None:
@@ -164,7 +200,7 @@ def _copy_exact(source: Path, destination: Path) -> None:
 
 
 def _assert_byte_and_hash_parity(plan: CheckoutPlan) -> None:
-    for name in FILE_NAMES:
+    for name in plan.file_names:
         source = plan.source(name)
         destination = plan.destination(name)
         if not destination.is_file() or destination.is_symlink():
@@ -176,7 +212,7 @@ def _assert_byte_and_hash_parity(plan: CheckoutPlan) -> None:
 
 
 def synchronize(primary_checkout: Path, mirror_checkout: Path, *, apply: bool = False) -> tuple[CheckoutPlan, CheckoutPlan]:
-    """Validate both checkouts, then plan or apply the exact six-file sync."""
+    """Validate both checkouts, then plan or apply the exact generated-file sync."""
     primary = _prepare_plan("primary", primary_checkout)
     mirror = _prepare_plan("mirror", mirror_checkout)
     if primary.checkout == mirror.checkout:
@@ -185,7 +221,7 @@ def synchronize(primary_checkout: Path, mirror_checkout: Path, *, apply: bool = 
 
     if not apply:
         for plan in plans:
-            for name in FILE_NAMES:
+            for name in plan.file_names:
                 digest = sha256_path(plan.source(name))
                 print(
                     f"PLAN {plan.profile}: dist/{plan.profile}/{name} -> "
@@ -196,14 +232,15 @@ def synchronize(primary_checkout: Path, mirror_checkout: Path, *, apply: bool = 
 
     for plan in plans:
         plan.destination_dir.mkdir(parents=True, exist_ok=True)
-        for name in FILE_NAMES:
+        for name in plan.file_names:
+            plan.destination(name).parent.mkdir(parents=True, exist_ok=True)
             _copy_exact(plan.source(name), plan.destination(name))
 
     for plan in plans:
         observed = assert_status_confined(plan.checkout, plan.allowed_paths)
         _assert_byte_and_hash_parity(plan)
         print(
-            f"VERIFIED {plan.profile}: {len(FILE_NAMES)} files copied; "
+            f"VERIFIED {plan.profile}: {len(plan.file_names)} files copied; "
             f"{len(observed)} changed paths, all confined to the exact file set"
         )
     return plans

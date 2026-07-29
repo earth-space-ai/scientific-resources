@@ -14,6 +14,8 @@ The current snapshot has 32 records:
 
 The three public groups contain 9 credit programs, 14 HPC/GPU programs, and 9 grant programs.
 
+The public archive is append-only by stable ID. A published ID is not removed merely because a call is retired; the record remains visible, stays `status=closed`, and carries lifecycle metadata explaining the retirement or reactivation state. Historical snapshots are immutable JSON artifacts and are selected client-side from same-origin `/scientific-resources/snapshots/...` paths.
+
 ## Evidence policy
 
 Only provider, agency, facility, foundation, or provider-linked application pages are accepted as evidence. Aggregators and secondhand lists are not evidence for a status decision. Every record keeps at least one public official-source URL and a dated verification value.
@@ -37,7 +39,7 @@ Page availability and named-program openness are checked separately. An availabl
 
 ## Public data boundary
 
-`data/opportunities.json` contains only the fields declared by `data/schema.json`: stable public identity, provider and grouping, status, resource and deadline descriptions, generic eligibility, endpoint note, public application and official-source URLs, and verification dates. Both hosts use this exact object.
+`data/opportunities.json` contains only the fields declared by `data/schema.json`: stable public identity, provider and grouping, status, resource and deadline descriptions, generic eligibility, endpoint note, public application and official-source URLs, verification dates, and lifecycle fields. Both hosts use this exact object after it has been recorded as the latest reviewed history snapshot.
 
 ## Limitations
 

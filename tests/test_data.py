@@ -2,28 +2,24 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 import unittest
 from collections import Counter
 from datetime import date, datetime
 from urllib.parse import urlsplit
 
-from helpers import DATA_PATH, SCHEMA_PATH, load_json, sha256_path
+from helpers import DATA_PATH, HISTORY, SCHEMA_PATH, load_json, sha256_path
 
-EXPECTED_DATA_SHA256 = "a5af1ed92d34f47ffbda372e0d028940b7e5aaa485e4a52486dc34f4388dbc64"
-EXPECTED_STATUS_COUNTS = {"total": 32, "open": 22, "upcoming": 2, "closed": 8}
-EXPECTED_GROUP_STATUS = {
-    "credits": Counter({"open": 7, "closed": 2}),
-    "hpc": Counter({"open": 10, "closed": 3, "upcoming": 1}),
-    "grants": Counter({"open": 5, "closed": 3, "upcoming": 1}),
-}
-EXPECTED_DEADLINES = [
-    "2026-07-31",
-    "2026-08-02",
-    "2026-08-07",
-    "2026-09-01",
-    "2026-10-29",
-    "2026-11-04",
-]
+sys.path.insert(0, str(DATA_PATH.parents[1] / "src"))
+import generate  # noqa: E402
+
+EXPECTED_ORIGINAL_SHA256 = "a5af1ed92d34f47ffbda372e0d028940b7e5aaa485e4a52486dc34f4388dbc64"
+ORIGINAL_ID = "2026-07-28-a5af1ed92d34"
+
+
+def declared_counts(records):
+    observed = Counter(record["status"] for record in records)
+    return {"total": len(records), "open": observed["open"], "upcoming": observed["upcoming"], "closed": observed["closed"]}
 
 
 class SchemaAssertionError(AssertionError):
@@ -118,6 +114,13 @@ class PublicDataTests(unittest.TestCase):
         cls.data = load_json(DATA_PATH)
         cls.schema = load_json(SCHEMA_PATH)
         cls.records = cls.data["opportunities"]
+        cls.history_index = load_json(HISTORY / "index.json")
+        cls.current_snapshot_id = cls.history_index["current_snapshot_id"]
+        cls.current_summary = next(
+            item for item in cls.history_index["snapshots"] if item["snapshot_id"] == cls.current_snapshot_id
+        )
+        cls.current_snapshot_path = HISTORY / "snapshots" / cls.current_snapshot_id / "public_opportunities.json"
+        cls.original = load_json(HISTORY / "snapshots" / ORIGINAL_ID / "public_opportunities.json")
 
     def test_public_schema_document_and_full_validation(self):
         self.assertEqual(self.schema["$schema"], "https://json-schema.org/draft/2020-12/schema")
@@ -130,21 +133,32 @@ class PublicDataTests(unittest.TestCase):
         self.assertEqual(candidates, [DATA_PATH])
 
     def test_reviewed_snapshot_is_byte_preserved(self):
-        self.assertEqual(sha256_path(DATA_PATH), EXPECTED_DATA_SHA256)
-        self.assertEqual(self.data["page_date"], "2026-07-28")
+        self.assertEqual(sha256_path(DATA_PATH), self.current_summary["canonical_data_sha256"])
+        self.assertEqual(DATA_PATH.read_bytes(), self.current_snapshot_path.read_bytes())
+        self.assertEqual(self.data["page_date"], self.current_summary["page_date"])
         self.assertEqual(self.data["page_timezone"], "America/Los_Angeles")
-        self.assertEqual(self.data["verified_at"], "2026-07-29T04:27:05Z")
+        self.assertEqual(self.data["verified_at"], self.current_summary["verified_at"])
+        self.assertEqual(
+            sha256_path(DATA_PATH.parent / "history" / "snapshots" / ORIGINAL_ID / "public_opportunities.json"),
+            EXPECTED_ORIGINAL_SHA256,
+        )
 
     def test_record_and_status_counts(self):
-        self.assertEqual(len(self.records), 32)
         observed = Counter(record["status"] for record in self.records)
-        self.assertEqual(self.data["counts"], EXPECTED_STATUS_COUNTS)
-        self.assertEqual(observed, Counter({"open": 22, "closed": 8, "upcoming": 2}))
+        self.assertEqual(self.data["counts"], declared_counts(self.records))
+        self.assertEqual(self.current_summary["record_count"], len(self.records))
+        self.assertEqual(self.current_summary["status_counts"], generate.status_counts(self.records))
+        self.assertEqual(observed, Counter(self.current_summary["status_counts"]))
 
-    def test_group_status_matrix(self):
-        for group, expected in EXPECTED_GROUP_STATUS.items():
+    def test_group_status_matrix_uses_allowed_groups_and_statuses(self):
+        seen_groups = set()
+        for group in generate.GROUP_LABELS:
             observed = Counter(record["status"] for record in self.records if record["group"] == group)
-            self.assertEqual(observed, expected)
+            self.assertEqual(sum(observed.values()), sum(1 for record in self.records if record["group"] == group))
+            self.assertTrue(set(observed) <= set(generate.STATUS_LABELS))
+            if observed:
+                seen_groups.add(group)
+        self.assertEqual(seen_groups, set(generate.GROUP_LABELS))
 
     def test_ids_are_unique_stable_slugs(self):
         ids = [record["id"] for record in self.records]
@@ -152,19 +166,18 @@ class PublicDataTests(unittest.TestCase):
         self.assertTrue(all(re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", item) for item in ids))
 
     def test_deadline_and_closing_soon_facts(self):
-        self.assertEqual(Counter(record["deadline_kind"] for record in self.records),
-                         Counter({"rolling": 15, "closed": 8, "fixed": 7, "tbd": 2}))
-        self.assertEqual(sorted(record["next_deadline"] for record in self.records if record["next_deadline"]),
-                         EXPECTED_DEADLINES)
+        self.assertTrue(all(record["deadline_kind"] in {"rolling", "closed", "fixed", "tbd"} for record in self.records))
+        self.assertTrue(all(record["status"] == "closed" for record in self.records if record["deadline_kind"] == "closed"))
+        for record in self.records:
+            if record["next_deadline"]:
+                date.fromisoformat(record["next_deadline"])
         soon = [record for record in self.records if record["closing_soon"]]
-        self.assertEqual(len(soon), 3)
         self.assertTrue(all(record["status"] == "open" for record in soon))
+        self.assertTrue(all(record["next_deadline"] for record in soon))
 
     def test_application_and_official_urls(self):
         application_records = [record for record in self.records if record["application_url"]]
-        self.assertEqual(len(application_records), 22)
         self.assertTrue(all(record["status"] == "open" and record["apply_label"] for record in application_records))
-        self.assertEqual(sum(len(record["official_source_urls"]) for record in self.records), 77)
         for record in self.records:
             self.assertEqual(bool(record["application_url"]), bool(record["apply_label"]))
             urls = list(record["official_source_urls"])
@@ -184,6 +197,35 @@ class PublicDataTests(unittest.TestCase):
         self.assertEqual(set(definitions), {"open", "upcoming", "closed", "stale-endpoint"})
         self.assertTrue(all(record["endpoint_note"] for record in self.records))
         self.assertTrue(all(record["verified_date"] == self.data["page_date"] for record in self.records))
+
+    def test_lifecycle_invariants(self):
+        original_ids = {record["id"] for record in self.original["opportunities"]}
+        for record in self.records:
+            if record["id"] in original_ids:
+                self.assertEqual(record["first_seen"], "2026-07-28")
+            self.assertLessEqual(date.fromisoformat(record["first_seen"]), date.fromisoformat(record["last_verified"]))
+            self.assertEqual(record["last_verified"], record["verified_date"])
+            if record["retired_at"] is None:
+                self.assertIsNone(record["retirement_reason"])
+            else:
+                self.assertEqual(record["status"], "closed")
+                self.assertIsInstance(record["retirement_reason"], str)
+            self.assertIsNone(record["superseded_by"])
+            self.assertIsNone(record["reactivated_at"])
+
+    def test_current_validator_allows_legitimate_added_records_and_status_counts(self):
+        future = json.loads(json.dumps(self.data))
+        new_record = json.loads(json.dumps(future["opportunities"][0]))
+        new_record["id"] = "example-new-resource-2026"
+        new_record["program"] = "Example New Resource 2026"
+        new_record["first_seen"] = future["page_date"]
+        future["opportunities"].append(new_record)
+        future["counts"] = declared_counts(future["opportunities"])
+        generate.validate_public_data(future)
+
+        future["counts"]["open"] = max(0, future["counts"]["open"] - 1)
+        with self.assertRaisesRegex(ValueError, "declared and observed status counts"):
+            generate.validate_public_data(future)
 
 
 if __name__ == "__main__":

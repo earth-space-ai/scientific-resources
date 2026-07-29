@@ -139,7 +139,13 @@
         "apply_label",
         "official_source_urls",
         "verified_at",
-        "verified_date"
+        "verified_date",
+        "first_seen",
+        "last_verified",
+        "retired_at",
+        "retirement_reason",
+        "superseded_by",
+        "reactivated_at"
       ],
       "properties": {
         "id": {
@@ -253,6 +259,63 @@
         "verified_date": {
           "type": "string",
           "format": "date"
+        },
+        "first_seen": {
+          "type": "string",
+          "format": "date"
+        },
+        "last_verified": {
+          "type": "string",
+          "format": "date"
+        },
+        "retired_at": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "retirement_reason": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "superseded_by": {
+          "anyOf": [
+            {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reactivated_at": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       }
     }

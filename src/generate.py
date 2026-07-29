@@ -19,6 +19,8 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 BUILD_SPEC_VERSION = "1.0.0"
+SNAPSHOT_INDEX_VERSION = "1.0.0"
+CHANGE_MANIFEST_VERSION = "1.0.0"
 EXPECTED_PROFILE_URLS = {
     "primary": "https://earth-space-ai.org/scientific-resources",
     "mirror": "https://huangzesen.github.io/scientific-resources/",
@@ -49,7 +51,24 @@ RECORD_FIELDS = {
     "official_source_urls",
     "verified_at",
     "verified_date",
+    "first_seen",
+    "last_verified",
+    "retired_at",
+    "retirement_reason",
+    "superseded_by",
+    "reactivated_at",
 }
+LEGACY_RECORD_FIELDS = RECORD_FIELDS - {
+    "first_seen",
+    "last_verified",
+    "retired_at",
+    "retirement_reason",
+    "superseded_by",
+    "reactivated_at",
+}
+OPERATIONAL_LIFECYCLE_FIELDS = {"first_seen", "last_verified", "verified_at", "verified_date"}
+LIFECYCLE_TRANSITION_FIELDS = {"retired_at", "retirement_reason", "superseded_by", "reactivated_at"}
+HISTORY_ROOT_RELATIVE = "/scientific-resources/snapshots"
 
 
 def canonical_json_bytes(value: object) -> bytes:
@@ -81,7 +100,74 @@ def require_public_https(value: str, label: str) -> None:
         raise ValueError(f"{label} must be a public HTTPS URL without embedded user information")
 
 
-def validate_public_data(data: dict) -> None:
+def record_fingerprint(record: dict) -> str:
+    return sha256_bytes(canonical_json_bytes(record))
+
+
+def stable_id_sha256(records: list[dict]) -> str:
+    return sha256_bytes(canonical_json_bytes(sorted(record["id"] for record in records)))
+
+
+def snapshot_id_for(data_sha: str, page_date: str) -> str:
+    return f"{page_date}-{data_sha[:12]}"
+
+
+def validate_snapshot_id(snapshot_id: str, label: str = "snapshot_id") -> None:
+    if not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-f0-9]{12}", snapshot_id):
+        raise ValueError(f"{label} must be YYYY-MM-DD plus a 12-character SHA prefix")
+
+
+def status_counts(records: list[dict]) -> dict[str, int]:
+    observed = Counter(record.get("status") for record in records)
+    return {key: observed.get(key, 0) for key in ("open", "upcoming", "closed")}
+
+
+def validate_lifecycle(record: dict, label: str) -> None:
+    first_seen = parse_date(record["first_seen"], f"{label}.first_seen")
+    last_verified = parse_date(record["last_verified"], f"{label}.last_verified")
+    if first_seen > last_verified:
+        raise ValueError(f"{label} first_seen must not be after last_verified")
+    if record["last_verified"] != record["verified_date"]:
+        raise ValueError(f"{label} last_verified must match verified_date")
+
+    retired_at = record["retired_at"]
+    retirement_reason = record["retirement_reason"]
+    if retired_at is None:
+        if retirement_reason is not None:
+            raise ValueError(f"{label} retirement_reason requires retired_at")
+    else:
+        retired_date = parse_date(retired_at, f"{label}.retired_at")
+        if retired_date < first_seen:
+            raise ValueError(f"{label} retired_at must not be before first_seen")
+        if record["status"] != "closed":
+            raise ValueError(f"{label} retired records must remain status=closed")
+        if not isinstance(retirement_reason, str) or not retirement_reason.strip():
+            raise ValueError(f"{label} retired records require a retirement_reason")
+
+    superseded_by = record["superseded_by"]
+    if superseded_by is not None:
+        if not isinstance(superseded_by, list) or not superseded_by:
+            raise ValueError(f"{label}.superseded_by must be null or a non-empty ID list")
+        for index, item in enumerate(superseded_by):
+            if not isinstance(item, str) or not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", item):
+                raise ValueError(f"{label}.superseded_by[{index}] must be a stable ID slug")
+
+    reactivated_at = record["reactivated_at"]
+    if reactivated_at is not None:
+        reactivated_date = parse_date(reactivated_at, f"{label}.reactivated_at")
+        if reactivated_date < first_seen:
+            raise ValueError(f"{label} reactivated_at must not be before first_seen")
+        if retired_at is not None and reactivated_date < parse_date(retired_at, f"{label}.retired_at"):
+            raise ValueError(f"{label} reactivated_at must not be before retired_at")
+
+
+def validate_public_data(
+    data: dict,
+    *,
+    allow_legacy_lifecycle: bool = False,
+    expected_record_count: int | None = None,
+    expected_status_counts: dict[str, int] | None = None,
+) -> None:
     """Apply release-blocking semantic checks before rendering."""
     expected_top = {
         "title",
@@ -103,21 +189,30 @@ def validate_public_data(data: dict) -> None:
         raise ValueError("unexpected page timezone")
 
     records = data["opportunities"]
-    if not isinstance(records, list) or len(records) != 32:
-        raise ValueError("the reviewed snapshot must contain exactly 32 records")
+    if not isinstance(records, list):
+        raise ValueError("opportunities must be a list")
+    if expected_record_count is not None and len(records) != expected_record_count:
+        raise ValueError("history snapshot record count must match its index summary")
     ids = [record.get("id") for record in records]
     if len(set(ids)) != len(ids) or any(not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", item or "") for item in ids):
         raise ValueError("record IDs must be unique stable slugs")
 
     observed = Counter(record.get("status") for record in records)
-    expected_counts = {"total": len(records), "open": 22, "upcoming": 2, "closed": 8}
-    if data["counts"] != expected_counts or observed != Counter({"open": 22, "closed": 8, "upcoming": 2}):
-        raise ValueError("declared and observed status counts must match the reviewed snapshot")
+    declared_counts = data["counts"]
+    observed_counts = {"total": len(records), **status_counts(records)}
+    if declared_counts != observed_counts:
+        raise ValueError("declared and observed status counts must match")
+    if expected_status_counts is not None and status_counts(records) != expected_status_counts:
+        raise ValueError("history snapshot status counts must match its index summary")
 
     soon_cutoff = snapshot + timedelta(days=10)
     for index, record in enumerate(records):
         label = f"opportunities[{index}]"
-        if set(record) != RECORD_FIELDS:
+        fields = set(record)
+        allowed_shapes = {frozenset(RECORD_FIELDS)}
+        if allow_legacy_lifecycle:
+            allowed_shapes.add(frozenset(LEGACY_RECORD_FIELDS))
+        if frozenset(fields) not in allowed_shapes:
             raise ValueError(f"{label} has an unexpected public field shape")
         if record["group"] not in GROUP_LABELS or record["group_label"] != GROUP_LABELS[record["group"]]:
             raise ValueError(f"{label} has inconsistent group metadata")
@@ -128,6 +223,8 @@ def validate_public_data(data: dict) -> None:
         if record["verified_date"] != data["page_date"]:
             raise ValueError(f"{label} has a verification-date mismatch")
         parse_timestamp(record["verified_at"], f"{label}.verified_at")
+        if fields >= RECORD_FIELDS:
+            validate_lifecycle(record, label)
 
         next_deadline = record["next_deadline"]
         parsed_deadline = parse_date(next_deadline, f"{label}.next_deadline") if next_deadline else None
@@ -150,6 +247,190 @@ def validate_public_data(data: dict) -> None:
             raise ValueError(f"{label} must have unique official-source URLs")
         for source_index, source_url in enumerate(sources):
             require_public_https(source_url, f"{label}.official_source_urls[{source_index}]")
+
+
+def summarize_snapshot(data: dict, data_sha: str, source: dict) -> dict:
+    snapshot_id = snapshot_id_for(data_sha, data["page_date"])
+    return {
+        "snapshot_id": snapshot_id,
+        "page_date": data["page_date"],
+        "page_timezone": data["page_timezone"],
+        "verified_at": data["verified_at"],
+        "canonical_data_sha256": data_sha,
+        "record_count": len(data["opportunities"]),
+        "status_counts": status_counts(data["opportunities"]),
+        "stable_id_sha256": stable_id_sha256(data["opportunities"]),
+        "data_url": f"{HISTORY_ROOT_RELATIVE}/{snapshot_id}/public_opportunities.json",
+        "change_manifest_url": f"{HISTORY_ROOT_RELATIVE}/{snapshot_id}/change_manifest.json",
+        "source": source,
+    }
+
+
+def substantive_changed_fields(previous: dict, current: dict) -> list[str]:
+    fields = sorted((set(previous) | set(current)) - OPERATIONAL_LIFECYCLE_FIELDS)
+    return [field for field in fields if previous.get(field) != current.get(field)]
+
+
+def diff_snapshots(previous: dict | None, current: dict, snapshot_id: str) -> dict:
+    current_by_id = {record["id"]: record for record in current["opportunities"]}
+    previous_by_id = {record["id"]: record for record in previous["opportunities"]} if previous else {}
+    missing = sorted(set(previous_by_id) - set(current_by_id))
+    if missing:
+        raise ValueError(f"snapshot would remove previously published IDs: {', '.join(missing)}")
+
+    changes = []
+    counts = {key: 0 for key in ("added", "changed", "retired", "reactivated", "unchanged")}
+    for record_id in sorted(current_by_id):
+        current_record = current_by_id[record_id]
+        previous_record = previous_by_id.get(record_id)
+        if previous_record is None:
+            change_type = "added"
+            changed_fields: list[str] = []
+        else:
+            changed_fields = substantive_changed_fields(previous_record, current_record)
+            was_retired = bool(previous_record.get("retired_at"))
+            is_retired = bool(current_record.get("retired_at"))
+            if not was_retired and is_retired:
+                change_type = "retired"
+            elif was_retired and not is_retired:
+                change_type = "reactivated"
+            elif current_record.get("reactivated_at") != previous_record.get("reactivated_at") and current_record.get("reactivated_at"):
+                change_type = "reactivated"
+            elif changed_fields:
+                change_type = "changed"
+            else:
+                change_type = "unchanged"
+        counts[change_type] += 1
+        changes.append(
+            {
+                "id": record_id,
+                "change_type": change_type,
+                "previous_status": previous_record.get("status") if previous_record else None,
+                "current_status": current_record["status"],
+                "changed_fields": changed_fields,
+                "previous_record_sha256": record_fingerprint(previous_record) if previous_record else None,
+                "current_record_sha256": record_fingerprint(current_record),
+            }
+        )
+
+    return {
+        "schema_version": CHANGE_MANIFEST_VERSION,
+        "snapshot_id": snapshot_id,
+        "previous_snapshot_id": snapshot_id_for(sha256_bytes(canonical_json_bytes(previous)), previous["page_date"]) if previous else None,
+        "comparison_basis": "stable-id-lifecycle",
+        "current_data_sha256": sha256_bytes(canonical_json_bytes(current)),
+        "previous_data_sha256": sha256_bytes(canonical_json_bytes(previous)) if previous else None,
+        "counts": counts,
+        "changes": changes,
+    }
+
+
+def load_history(history_dir: Path) -> tuple[dict, dict[str, tuple[dict, bytes, dict]]]:
+    index_path = history_dir / "index.json"
+    index = json.loads(index_path.read_text(encoding="utf-8"))
+    validate_history_index(index)
+    snapshots: dict[str, tuple[dict, bytes, dict]] = {}
+    for item in index["snapshots"]:
+        snapshot_id = item["snapshot_id"]
+        validate_snapshot_id(snapshot_id)
+        snapshot_dir = history_dir / "snapshots" / snapshot_id
+        data_bytes = (snapshot_dir / "public_opportunities.json").read_bytes()
+        data = json.loads(data_bytes.decode("utf-8"))
+        validate_public_data(
+            data,
+            allow_legacy_lifecycle=True,
+            expected_record_count=item["record_count"],
+            expected_status_counts=item["status_counts"],
+        )
+        if sha256_bytes(data_bytes) != item["canonical_data_sha256"]:
+            raise ValueError(f"history snapshot hash mismatch: {snapshot_id}")
+        if stable_id_sha256(data["opportunities"]) != item["stable_id_sha256"]:
+            raise ValueError(f"history stable-ID hash mismatch: {snapshot_id}")
+        manifest = json.loads((snapshot_dir / "change_manifest.json").read_text(encoding="utf-8"))
+        validate_change_manifest(manifest, item, data)
+        snapshots[snapshot_id] = (data, data_bytes, manifest)
+    return index, snapshots
+
+
+def validate_history_index(index: dict) -> None:
+    if set(index) != {"schema_version", "title", "current_snapshot_id", "generated_from", "snapshots"}:
+        raise ValueError("history index has an unexpected shape")
+    if index["schema_version"] != SNAPSHOT_INDEX_VERSION:
+        raise ValueError("unsupported history index version")
+    validate_snapshot_id(index["current_snapshot_id"], "current_snapshot_id")
+    snapshots = index["snapshots"]
+    if not snapshots or index["current_snapshot_id"] != snapshots[0]["snapshot_id"]:
+        raise ValueError("history index current snapshot must be first")
+    seen: set[str] = set()
+    previous_key = None
+    for item in snapshots:
+        required = {
+            "snapshot_id", "page_date", "page_timezone", "verified_at", "canonical_data_sha256",
+            "record_count", "status_counts", "stable_id_sha256", "data_url", "change_manifest_url", "source",
+        }
+        if set(item) != required:
+            raise ValueError("history index snapshot has an unexpected shape")
+        if item["snapshot_id"] in seen:
+            raise ValueError("duplicate history snapshot ID")
+        validate_snapshot_id(item["snapshot_id"])
+        seen.add(item["snapshot_id"])
+        if item["data_url"] != f"{HISTORY_ROOT_RELATIVE}/{item['snapshot_id']}/public_opportunities.json":
+            raise ValueError("history data URL must be root-relative")
+        if item["change_manifest_url"] != f"{HISTORY_ROOT_RELATIVE}/{item['snapshot_id']}/change_manifest.json":
+            raise ValueError("history manifest URL must be root-relative")
+        key = (item["page_date"], item["verified_at"], item["canonical_data_sha256"])
+        if previous_key is not None and key > previous_key:
+            raise ValueError("history snapshots must be newest first")
+        previous_key = key
+    if index["current_snapshot_id"] not in seen:
+        raise ValueError("history current snapshot ID is missing")
+
+
+def validate_change_manifest(manifest: dict, summary: dict, data: dict) -> None:
+    required = {
+        "schema_version", "snapshot_id", "previous_snapshot_id", "comparison_basis",
+        "current_data_sha256", "previous_data_sha256", "counts", "changes",
+    }
+    if set(manifest) != required or manifest["schema_version"] != CHANGE_MANIFEST_VERSION:
+        raise ValueError("change manifest has an unexpected shape")
+    if manifest["snapshot_id"] != summary["snapshot_id"]:
+        raise ValueError("change manifest snapshot mismatch")
+    if manifest["current_data_sha256"] != summary["canonical_data_sha256"]:
+        raise ValueError("change manifest data SHA mismatch")
+    allowed = {"added", "changed", "retired", "reactivated", "unchanged"}
+    if set(manifest["counts"]) != allowed:
+        raise ValueError("change manifest counts have an unexpected shape")
+    ids = {record["id"] for record in data["opportunities"]}
+    observed = Counter()
+    for change in manifest["changes"]:
+        if change["id"] not in ids:
+            raise ValueError("change manifest references an unknown ID")
+        if change["change_type"] not in allowed:
+            raise ValueError("change manifest has an unsupported change type")
+        observed[change["change_type"]] += 1
+        if not isinstance(change["changed_fields"], list):
+            raise ValueError("change manifest changed_fields must be a list")
+    if dict(observed) != {key: manifest["counts"][key] for key in allowed if manifest["counts"][key]}:
+        raise ValueError("change manifest counts do not match entries")
+
+
+def copy_history_artifacts(profile_dir: Path, history_dir: Path, index: dict) -> dict[str, str]:
+    output_hashes: dict[str, str] = {}
+    snapshots_dir = profile_dir / "snapshots"
+    snapshots_dir.mkdir(parents=True, exist_ok=True)
+    index_bytes = canonical_json_bytes(index)
+    (snapshots_dir / "index.json").write_bytes(index_bytes)
+    output_hashes["snapshots/index.json"] = sha256_bytes(index_bytes)
+    for item in index["snapshots"]:
+        snapshot_id = item["snapshot_id"]
+        source_dir = history_dir / "snapshots" / snapshot_id
+        target_dir = snapshots_dir / snapshot_id
+        target_dir.mkdir(parents=True, exist_ok=True)
+        for name in ("public_opportunities.json", "change_manifest.json"):
+            payload = (source_dir / name).read_bytes()
+            (target_dir / name).write_bytes(payload)
+            output_hashes[f"snapshots/{snapshot_id}/{name}"] = sha256_bytes(payload)
+    return output_hashes
 
 
 def validate_profiles(config: dict) -> dict[str, dict[str, str]]:
@@ -311,6 +592,7 @@ def manifest_for(
     generator_bytes: bytes,
     profiles_bytes: bytes,
     html_bytes: bytes,
+    history_outputs: dict[str, str],
 ) -> dict:
     """Create deterministic, repository-relative provenance without machine details."""
     return {
@@ -342,11 +624,12 @@ def manifest_for(
         "outputs": {
             "index.html": sha256_bytes(html_bytes),
             "public_opportunities.json": sha256_bytes(data_bytes),
+            **history_outputs,
         },
     }
 
 
-def build(data_path: Path, schema_path: Path, profiles_path: Path, template_path: Path, output_dir: Path) -> None:
+def build(data_path: Path, schema_path: Path, profiles_path: Path, template_path: Path, output_dir: Path, history_dir: Path) -> None:
     data_bytes_input = data_path.read_bytes()
     data = json.loads(data_bytes_input.decode("utf-8"))
     validate_public_data(data)
@@ -362,12 +645,20 @@ def build(data_path: Path, schema_path: Path, profiles_path: Path, template_path
     template_bytes = template_path.read_bytes()
     template = template_bytes.decode("utf-8")
     generator_bytes = Path(__file__).read_bytes()
+    history_index, _history_snapshots = load_history(history_dir)
+    latest = history_index["snapshots"][0]
+    if data_bytes != (history_dir / "snapshots" / latest["snapshot_id"] / "public_opportunities.json").read_bytes():
+        raise ValueError(
+            "production build refused: data/opportunities.json must byte-match "
+            "the latest history snapshot; run src/record_snapshot.py after reviewed data edits"
+        )
 
     for profile_id in ("primary", "mirror"):
         profile = profiles[profile_id]
         profile_dir = output_dir / profile_id
         profile_dir.mkdir(parents=True, exist_ok=True)
         html_bytes = render_html(template, data, profile_id, profile).encode("utf-8")
+        history_outputs = copy_history_artifacts(profile_dir, history_dir, history_index)
         manifest = manifest_for(
             data=data,
             profile_id=profile_id,
@@ -378,6 +669,7 @@ def build(data_path: Path, schema_path: Path, profiles_path: Path, template_path
             generator_bytes=generator_bytes,
             profiles_bytes=profiles_bytes,
             html_bytes=html_bytes,
+            history_outputs=history_outputs,
         )
         (profile_dir / "index.html").write_bytes(html_bytes)
         (profile_dir / "public_opportunities.json").write_bytes(data_bytes)
@@ -398,12 +690,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--profiles", type=Path, default=project_root / "src" / "site_profiles.json")
     parser.add_argument("--template", type=Path, default=project_root / "src" / "template.html")
     parser.add_argument("--output", type=Path, default=project_root / "dist")
+    parser.add_argument("--history-dir", type=Path, default=project_root / "data" / "history")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    build(args.data, args.schema, args.profiles, args.template, args.output)
+    build(args.data, args.schema, args.profiles, args.template, args.output, args.history_dir)
 
 
 if __name__ == "__main__":

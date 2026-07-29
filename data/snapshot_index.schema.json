@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://earth-space-ai.org/scientific-resources/snapshot_index.schema.json",
+  "title": "Scientific Resource Tracker snapshot index",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "title", "current_snapshot_id", "generated_from", "snapshots"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "title": {"const": "Scientific Resource Tracker snapshot index"},
+    "current_snapshot_id": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-f0-9]{12}$"},
+    "generated_from": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_repository", "source_commit", "build_spec_version"],
+      "properties": {
+        "source_repository": {"type": "string", "format": "uri", "pattern": "^https://"},
+        "source_commit": {"type": "string", "pattern": "^[a-f0-9]{40}$"},
+        "build_spec_version": {"const": "1.0.0"}
+      }
+    },
+    "snapshots": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/snapshot"}
+    }
+  },
+  "$defs": {
+    "snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "snapshot_id",
+        "page_date",
+        "page_timezone",
+        "verified_at",
+        "canonical_data_sha256",
+        "record_count",
+        "status_counts",
+        "stable_id_sha256",
+        "data_url",
+        "change_manifest_url",
+        "source"
+      ],
+      "properties": {
+        "snapshot_id": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-f0-9]{12}$"},
+        "page_date": {"type": "string", "format": "date"},
+        "page_timezone": {"const": "America/Los_Angeles"},
+        "verified_at": {"type": "string", "format": "date-time"},
+        "canonical_data_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "record_count": {"type": "integer", "minimum": 1},
+        "status_counts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["open", "upcoming", "closed"],
+          "properties": {
+            "open": {"type": "integer", "minimum": 0},
+            "upcoming": {"type": "integer", "minimum": 0},
+            "closed": {"type": "integer", "minimum": 0}
+          }
+        },
+        "stable_id_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "data_url": {"type": "string", "pattern": "^/scientific-resources/snapshots/"},
+        "change_manifest_url": {"type": "string", "pattern": "^/scientific-resources/snapshots/"},
+        "source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "commit", "path"],
+          "properties": {
+            "kind": {"enum": ["source-git"]},
+            "commit": {"type": "string", "pattern": "^[a-f0-9]{40}$"},
+            "path": {"const": "data/opportunities.json"}
+          }
+        }
+      }
+    }
+  }
+}

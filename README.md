@@ -12,7 +12,7 @@ The inspected primary route normalizes its canonical and social URL to the slash
 
 The canonical public dataset is a reviewed snapshot dated **2026-07-28** (`America/Los_Angeles`), with the completed collection verification timestamp **2026-07-29T04:27:05Z**. The configured Pacific date did not roll over. The dataset contains 32 public records: 22 open, 2 upcoming, and 8 closed. These are preserved snapshot facts, not a claim that the same statuses remain current today.
 
-`data/opportunities.json` is the sole canonical opportunity data file. Both host outputs are generated from that exact object. The fresh verification changed only the top-level collection `verified_at`; the 32 record facts, statuses, deadlines, URLs, and per-record timestamps remain unchanged. Do not hand-edit generated JSON or HTML.
+`data/opportunities.json` is the sole canonical current opportunity data file. Every stable ID remains present after publication; retirement is represented with lifecycle fields, not by deleting the record. Each current record carries `first_seen`, `last_verified`, `retired_at`, `retirement_reason`, `superseded_by`, and `reactivated_at`. The exact original 32-record dataset is preserved as the first immutable history snapshot at `data/history/snapshots/2026-07-28-a5af1ed92d34/`.
 
 ## Build
 
@@ -22,18 +22,31 @@ Requirements: Python 3.10 or newer; no third-party Python packages.
 python3 src/generate.py
 ```
 
-The build writes three tracked files to each host profile:
+The production build writes the current data, provenance, and immutable history files to each host profile:
 
 ```text
 dist/primary/index.html
 dist/primary/public_opportunities.json
 dist/primary/provenance.json
+dist/primary/snapshots/index.json
+dist/primary/snapshots/<snapshot-id>/public_opportunities.json
+dist/primary/snapshots/<snapshot-id>/change_manifest.json
 dist/mirror/index.html
 dist/mirror/public_opportunities.json
 dist/mirror/provenance.json
+dist/mirror/snapshots/index.json
+dist/mirror/snapshots/<snapshot-id>/public_opportunities.json
+dist/mirror/snapshots/<snapshot-id>/change_manifest.json
 ```
 
-The standalone JSON files are byte-identical to the canonical dataset. The HTML files embed the same JSON object and link their standalone data and provenance at `/scientific-resources/public_opportunities.json` and `/scientific-resources/provenance.json`. Host-specific differences are limited to canonical, alternate, social metadata, and visible primary/mirror navigation. Each provenance manifest contains only repository-relative input names, public host metadata, counts, and SHA-256 digests.
+The generator refuses production output unless `data/opportunities.json` byte-matches the latest entry in `data/history/index.json`. This protects publication from unrecorded current-data edits. After reviewed candidate-data edits for the next snapshot, append history first:
+
+```sh
+python3 src/record_snapshot.py --expected-page-date 2026-07-29
+python3 src/generate.py
+```
+
+The standalone current JSON files are byte-identical to the latest recorded snapshot. The HTML files embed that same object and load historical JSON only from same-origin root-relative `/scientific-resources/snapshots/...` paths. Host-specific differences are limited to canonical, alternate, social metadata, and visible primary/mirror navigation. Each provenance manifest contains only repository-relative input names, public host metadata, counts, and SHA-256 digests, including history artifacts.
 
 ## Validate
 
@@ -41,7 +54,7 @@ The standalone JSON files are byte-identical to the canonical dataset. The HTML 
 python3 -m unittest discover -s tests -v
 ```
 
-The standard-library test suite validates the public schema, fixed snapshot hash, record and status counts, group matrix, deadline facts, unique IDs, URL rules, public-field allowlist, privacy gates, embedded/standalone parity, exact host metadata and root-relative resource paths, semantic pre-rendering, self-contained assets, provenance digests, deterministic rebuilding, and safe two-checkout synchronization.
+The standard-library test suite validates the public schema, original baseline hash and source commit, lifecycle invariants, recorder refusal paths, manifest transition logic, current/latest parity refusal, record and status counts, URL rules, public-field allowlist, privacy gates, embedded/standalone parity, exact host metadata and root-relative resource paths, semantic pre-rendering, self-contained assets, provenance digests, and safe two-checkout synchronization.
 
 ## Owner-controlled checkout synchronization
 
@@ -53,7 +66,7 @@ python3 src/sync_checkouts.py \
   --mirror-checkout /path/to/mirror-checkout
 ```
 
-After reviewing the plan, the owner may add `--apply`. The helper copies only `{index.html, public_opportunities.json, provenance.json}` from `dist/primary/` to the primary checkout's `public/scientific-resources/` and from `dist/mirror/` to the mirror checkout's `scientific-resources/`. It rejects a dirty pre-state, never deletes files, never edits `next.config.mjs`, and succeeds only after Git-status confinement plus byte/SHA-256 parity checks.
+After reviewing the plan, the owner may add `--apply`. The helper copies only the exact generated files under each `dist/<profile>/` root: `index.html`, `public_opportunities.json`, `provenance.json`, and `snapshots/...`. It rejects a dirty pre-state, never deletes files, never edits `next.config.mjs`, and succeeds only after Git-status confinement plus byte/SHA-256 parity checks.
 
 The primary application's one-time exact Next.js rewrite is a separate owner-reviewed and committed host change. Subsequent releases use that committed rewrite plus this helper; the helper does not create or alter the rewrite.
 

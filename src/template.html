@@ -114,7 +114,7 @@ h1 { max-width: 22ch; margin: 0 0 1rem; font-size: clamp(2rem, 6vw, 4.25rem); li
 .controls-row { display: flex; align-items: end; gap: .75rem 1.25rem; flex-wrap: wrap; }
 .control-field { flex: 1 1 18rem; }
 .control-label { display: block; margin-bottom: .3rem; font: .7rem/1.4 var(--mono); text-transform: uppercase; }
-input[type="search"] {
+input[type="search"], select {
   width: 100%;
   min-height: var(--tap);
   padding: .55rem .75rem;
@@ -137,6 +137,16 @@ button {
 }
 button[aria-pressed="true"] { border-color: var(--ink); background: var(--ink); color: white; }
 .result-count { flex-basis: 100%; margin: 0; font: .75rem var(--mono); }
+.snapshot-status { flex-basis: 100%; margin: 0; color: var(--muted); font: .75rem var(--mono); }
+.diff-summary {
+  flex-basis: 100%;
+  margin: .25rem 0 0;
+  padding: .75rem;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  font: .78rem/1.45 var(--mono);
+}
+.diff-summary[hidden] { display: none; }
 .jump-nav { display: flex; gap: .25rem 1rem; flex-wrap: wrap; padding: 1rem 0; font: .78rem var(--mono); }
 .jump-nav a { display: inline-flex; align-items: center; min-height: var(--tap); }
 .closing-soon {
@@ -241,15 +251,15 @@ footer p { margin: 0; }
 <main id="main">
   <section class="hero wrap" aria-labelledby="page-title">
     <p class="eyebrow">Compute · credits · grants — public research resources</p>
-    <h1 id="page-title"><strong>{{OPEN_COUNT}}</strong> programs were recorded as open in the reviewed snapshot.</h1>
+    <h1 id="page-title"><strong id="page-open-count">{{OPEN_COUNT}}</strong> programs were recorded as open in the reviewed snapshot.</h1>
     <p class="lede">A static, official-source tracker for scientific compute allocations, API and cloud credits, and AI-for-science or open-science funding.</p>
     <ul class="summary-list" aria-label="Snapshot counts">
-      <li><strong>{{TOTAL_COUNT}}</strong> total</li>
-      <li><strong>{{OPEN_COUNT}}</strong> open</li>
-      <li><strong>{{UPCOMING_COUNT}}</strong> upcoming</li>
-      <li><strong>{{CLOSED_COUNT}}</strong> archived</li>
+      <li><strong id="summary-total-count">{{TOTAL_COUNT}}</strong> total</li>
+      <li><strong id="summary-open-count">{{OPEN_COUNT}}</strong> open</li>
+      <li><strong id="summary-upcoming-count">{{UPCOMING_COUNT}}</strong> upcoming</li>
+      <li><strong id="summary-closed-count">{{CLOSED_COUNT}}</strong> archived</li>
     </ul>
-    <p class="snapshot-note"><strong>Snapshot, not a live-status claim.</strong> Facts were reviewed for <time datetime="{{PAGE_DATE}}">{{PAGE_DATE}}</time> in {{TIMEZONE}}. Statuses can change; confirm every detail on the linked official pages.</p>
+    <p class="snapshot-note"><strong>Snapshot, not a live-status claim.</strong> Facts were reviewed for <time id="snapshot-date" datetime="{{PAGE_DATE}}">{{PAGE_DATE}}</time> in <span id="snapshot-timezone">{{TIMEZONE}}</span>. Statuses can change; confirm every detail on the linked official pages.</p>
   </section>
 
   <section class="controls" id="controls" aria-label="Opportunity filters" hidden>
@@ -257,6 +267,12 @@ footer p { margin: 0; }
       <div class="control-field">
         <label class="control-label" for="search">Search the snapshot</label>
         <input id="search" type="search" autocomplete="off" placeholder="Program, provider, resource…">
+      </div>
+      <div class="control-field">
+        <label class="control-label" for="snapshot-select">As of</label>
+        <select id="snapshot-select" aria-describedby="snapshot-status">
+          <option value="current">Current reviewed snapshot</option>
+        </select>
       </div>
       <div>
         <span class="control-label">Status</span>
@@ -269,6 +285,8 @@ footer p { margin: 0; }
       </div>
       <button type="button" id="clear">Clear</button>
       <p class="result-count" id="result-count" role="status" aria-live="polite"></p>
+      <p class="snapshot-status" id="snapshot-status">Showing current pre-rendered snapshot.</p>
+      <div class="diff-summary" id="diff-summary" hidden></div>
     </div>
   </section>
 
@@ -281,19 +299,21 @@ footer p { margin: 0; }
       <a href="#methodology">Methodology</a>
     </nav>
 
-    <aside class="closing-soon" aria-labelledby="closing-heading">
+    <aside class="closing-soon" aria-labelledby="closing-heading" id="closing-soon-box">
       <h2 id="closing-heading">Recorded as closing within 10 days of {{PAGE_DATE}}</h2>
-      <p>{{CLOSING_SOON}}</p>
+      <p id="closing-soon-list">{{CLOSING_SOON}}</p>
     </aside>
 
+    <div id="records-root">
 {{ACTIVE_SECTIONS}}
+    </div>
 
     <p class="empty-state is-hidden" id="empty-state">No records match the current filter.</p>
 
     <details class="archive" id="archive">
-      <summary>Archive — {{CLOSED_COUNT}} closed or past-cycle calls</summary>
+      <summary id="archive-summary">Archive — {{CLOSED_COUNT}} closed or past-cycle calls</summary>
       <p class="archive-note">These records remain visible so that an evergreen or repurposed page is not mistaken for an open named call.</p>
-      <div class="card-grid">
+      <div class="card-grid" id="archive-grid">
 {{ARCHIVE_CARDS}}
       </div>
     </details>
@@ -335,9 +355,27 @@ footer p { margin: 0; }
   var clear = document.getElementById("clear");
   var count = document.getElementById("result-count");
   var empty = document.getElementById("empty-state");
+  var snapshotSelect = document.getElementById("snapshot-select");
+  var snapshotStatus = document.getElementById("snapshot-status");
+  var diffSummary = document.getElementById("diff-summary");
+  var pageOpenCount = document.getElementById("page-open-count");
+  var summaryTotalCount = document.getElementById("summary-total-count");
+  var summaryOpenCount = document.getElementById("summary-open-count");
+  var summaryUpcomingCount = document.getElementById("summary-upcoming-count");
+  var summaryClosedCount = document.getElementById("summary-closed-count");
+  var snapshotDate = document.getElementById("snapshot-date");
+  var snapshotTimezone = document.getElementById("snapshot-timezone");
+  var recordsRoot = document.getElementById("records-root");
+  var archiveGrid = document.getElementById("archive-grid");
+  var archiveSummary = document.getElementById("archive-summary");
+  var closingHeading = document.getElementById("closing-heading");
+  var closingList = document.getElementById("closing-soon-list");
+  var currentData = JSON.parse(document.getElementById("dataset").textContent);
   var cards = Array.prototype.slice.call(document.querySelectorAll("article.card"));
   var buttons = Array.prototype.slice.call(document.querySelectorAll("button[data-status]"));
   var selectedStatus = "active";
+  var historyIndex = null;
+  var manifests = {};
   controls.hidden = false;
 
   function matches(card, query) {
@@ -362,6 +400,209 @@ footer p { margin: 0; }
     empty.classList.toggle("is-hidden", shown !== 0);
   }
 
+  function statusLabel(status) {
+    return {open: "Open", upcoming: "Upcoming", closed: "Closed"}[status] || status;
+  }
+
+  function appendText(parent, tag, className, text) {
+    var element = document.createElement(tag);
+    if (className) element.className = className;
+    element.textContent = text == null ? "" : String(text);
+    parent.appendChild(element);
+    return element;
+  }
+
+  function sourceLinks(record) {
+    var fragment = document.createDocumentFragment();
+    (record.official_source_urls || []).forEach(function (url, index) {
+      var link = document.createElement("a");
+      link.className = "source-link";
+      link.href = url;
+      link.rel = "noopener";
+      link.textContent = index === 0 ? "Official information" : "Official source " + (index + 1);
+      var arrow = document.createElement("span");
+      arrow.setAttribute("aria-hidden", "true");
+      arrow.textContent = " ↗";
+      link.appendChild(arrow);
+      fragment.appendChild(link);
+    });
+    return fragment;
+  }
+
+  function recordCard(record, archived) {
+    var article = document.createElement("article");
+    article.className = "card card-" + record.status;
+    article.id = "card-" + record.id;
+    article.setAttribute("data-status", record.status);
+    article.setAttribute("data-group", record.group);
+    article.setAttribute("data-search", [
+      record.program, record.provider, record.group_label, record.amount, record.deadline,
+      record.eligibility, record.endpoint_note
+    ].join(" ").toLowerCase());
+
+    var top = document.createElement("div");
+    top.className = "card-top";
+    appendText(top, "p", "provider", record.provider);
+    var badges = document.createElement("p");
+    badges.className = "badges";
+    appendText(badges, "span", "badge badge-" + record.status, statusLabel(record.status));
+    if (record.closing_soon) appendText(badges, "span", "badge badge-soon", "Closing soon");
+    if (archived) appendText(badges, "span", "badge badge-group", record.group_label);
+    top.appendChild(badges);
+    article.appendChild(top);
+    appendText(article, "h3", "", record.program);
+
+    var facts = document.createElement("dl");
+    facts.className = "facts";
+    [["Resources", record.amount], ["Deadline", record.deadline]].forEach(function (item) {
+      var row = document.createElement("div");
+      appendText(row, "dt", "", item[0]);
+      appendText(row, "dd", "", item[1]);
+      facts.appendChild(row);
+    });
+    article.appendChild(facts);
+
+    var details = document.createElement("details");
+    appendText(details, "summary", "", "Eligibility and verification notes");
+    appendText(details, "p", "", "Eligibility: " + record.eligibility);
+    appendText(details, "p", "", record.endpoint_note);
+    var evidence = appendText(details, "p", "all-sources", "Evidence: ");
+    evidence.appendChild(sourceLinks(record));
+    article.appendChild(details);
+
+    var actions = document.createElement("p");
+    actions.className = "actions";
+    if (record.application_url) {
+      var apply = document.createElement("a");
+      apply.className = "button apply-link";
+      apply.href = record.application_url;
+      apply.rel = "noopener";
+      apply.textContent = record.apply_label || "Apply";
+      var applyArrow = document.createElement("span");
+      applyArrow.setAttribute("aria-hidden", "true");
+      applyArrow.textContent = " ↗";
+      apply.appendChild(applyArrow);
+      actions.appendChild(apply);
+    }
+    actions.appendChild(sourceLinks(record));
+    article.appendChild(actions);
+    appendText(article, "p", "verified", "Verified " + record.verified_date + " (" + (record.page_timezone || "Pacific") + ")");
+    return article;
+  }
+
+  function renderSnapshot(data) {
+    pageOpenCount.textContent = data.counts.open;
+    summaryTotalCount.textContent = data.counts.total;
+    summaryOpenCount.textContent = data.counts.open;
+    summaryUpcomingCount.textContent = data.counts.upcoming;
+    summaryClosedCount.textContent = data.counts.closed;
+    snapshotDate.textContent = data.page_date;
+    snapshotDate.setAttribute("datetime", data.page_date);
+    snapshotTimezone.textContent = data.page_timezone;
+    var groups = {
+      credits: "API & cloud research credits",
+      hpc: "HPC & GPU allocations",
+      grants: "AI-for-science & open-science grants"
+    };
+    recordsRoot.replaceChildren();
+    Object.keys(groups).forEach(function (group) {
+      var groupRecords = data.opportunities.filter(function (record) {
+        return record.group === group && record.status !== "closed";
+      });
+      var section = document.createElement("section");
+      section.className = "resource-group";
+      section.setAttribute("data-resource-group", group);
+      section.setAttribute("aria-labelledby", "heading-" + group);
+      var header = document.createElement("header");
+      header.className = "section-heading";
+      appendText(header, "h2", "", groups[group]).id = "heading-" + group;
+      appendText(header, "p", "", groupRecords.filter(function (record) { return record.status === "open"; }).length + " open");
+      section.appendChild(header);
+      var grid = document.createElement("div");
+      grid.className = "card-grid";
+      groupRecords.forEach(function (record) { grid.appendChild(recordCard(record, false)); });
+      section.appendChild(grid);
+      recordsRoot.appendChild(section);
+    });
+    archiveGrid.replaceChildren();
+    data.opportunities.filter(function (record) { return record.status === "closed"; })
+      .forEach(function (record) { archiveGrid.appendChild(recordCard(record, true)); });
+    archiveSummary.textContent = "Archive — " + data.counts.closed + " closed or past-cycle calls";
+    closingHeading.textContent = "Recorded as closing within 10 days of " + data.page_date;
+    var closing = data.opportunities.filter(function (record) { return record.closing_soon; });
+    closingList.textContent = closing.length ? closing.map(function (record) {
+      return record.program + " — " + record.next_deadline;
+    }).join(" · ") : "No records were marked as closing soon in this snapshot.";
+    cards = Array.prototype.slice.call(document.querySelectorAll("article.card"));
+    applyFilters();
+  }
+
+  function renderDiff(manifest) {
+    if (!manifest) {
+      diffSummary.hidden = true;
+      return;
+    }
+    var counts = manifest.counts || {};
+    var parts = ["added", "changed", "retired", "reactivated"].map(function (key) {
+      return key + ": " + (counts[key] || 0);
+    });
+    diffSummary.textContent = "Snapshot diff since previous reviewed snapshot: " + parts.join(" · ");
+    diffSummary.hidden = false;
+  }
+
+  function loadHistoryIndex() {
+    if (historyIndex) return Promise.resolve(historyIndex);
+    return fetch("/scientific-resources/snapshots/index.json", {credentials: "same-origin"})
+      .then(function (response) {
+        if (!response.ok) throw new Error("snapshot index unavailable");
+        return response.json();
+      })
+      .then(function (index) {
+        historyIndex = index;
+        snapshotSelect.replaceChildren();
+        var currentOption = document.createElement("option");
+        currentOption.value = "current";
+        currentOption.textContent = "Current pre-rendered snapshot";
+        snapshotSelect.appendChild(currentOption);
+        index.snapshots.forEach(function (item) {
+          var option = document.createElement("option");
+          option.value = item.snapshot_id;
+          option.textContent = item.page_date + (item.snapshot_id === index.current_snapshot_id ? " (latest recorded)" : "");
+          snapshotSelect.appendChild(option);
+        });
+        return index;
+      });
+  }
+
+  function selectSnapshot(snapshotId) {
+    loadHistoryIndex().then(function (index) {
+      var item = index.snapshots.filter(function (candidate) { return candidate.snapshot_id === snapshotId; })[0] || index.snapshots[0];
+      return Promise.all([
+        fetch(item.data_url, {credentials: "same-origin"}).then(function (response) {
+          if (!response.ok) throw new Error("snapshot unavailable");
+          return response.json();
+        }),
+        manifests[item.snapshot_id] ? Promise.resolve(manifests[item.snapshot_id]) :
+          fetch(item.change_manifest_url, {credentials: "same-origin"}).then(function (response) {
+            if (!response.ok) throw new Error("manifest unavailable");
+            return response.json();
+          }).then(function (manifest) {
+            manifests[item.snapshot_id] = manifest;
+            return manifest;
+          })
+      ]).then(function (loaded) {
+        renderSnapshot(loaded[0]);
+        renderDiff(loaded[1]);
+        snapshotStatus.textContent = "Showing reviewed snapshot " + item.page_date + ".";
+      });
+    }).catch(function () {
+      snapshotSelect.value = "current";
+      renderSnapshot(currentData);
+      renderDiff(null);
+      snapshotStatus.textContent = "Historical snapshots are unavailable; showing current pre-rendered snapshot.";
+    });
+  }
+
   buttons.forEach(function (button) {
     button.addEventListener("click", function () {
       selectedStatus = button.getAttribute("data-status");
@@ -377,6 +618,16 @@ footer p { margin: 0; }
     buttons.forEach(function (item, index) { item.setAttribute("aria-pressed", String(index === 0)); });
     applyFilters();
     search.focus();
+  });
+  snapshotSelect.addEventListener("focus", loadHistoryIndex);
+  snapshotSelect.addEventListener("change", function () {
+    if (snapshotSelect.value === "current") {
+      renderSnapshot(currentData);
+      renderDiff(null);
+      snapshotStatus.textContent = "Showing current pre-rendered snapshot.";
+    } else {
+      selectSnapshot(snapshotSelect.value);
+    }
   });
   applyFilters();
 })();

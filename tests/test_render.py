@@ -3,6 +3,7 @@ from __future__ import annotations
 import html
 import re
 import unittest
+from collections import Counter
 from urllib.parse import urlsplit
 
 from helpers import DATA_PATH, DIST, PROFILES_PATH, HTMLFacts, load_json
@@ -40,9 +41,9 @@ class RenderContractTests(unittest.TestCase):
             self.assertEqual(facts.start_counts.get("main"), 1)
             self.assertEqual(facts.start_counts.get("h1"), 1)
             self.assertGreaterEqual(facts.start_counts.get("h2", 0), 5)
-            self.assertEqual(facts.start_counts.get("article"), 32)
+            self.assertEqual(facts.start_counts.get("article"), len(self.data["opportunities"]))
             self.assertGreaterEqual(facts.start_counts.get("nav", 0), 1)
-            self.assertGreaterEqual(facts.start_counts.get("details", 0), 33)
+            self.assertGreaterEqual(facts.start_counts.get("details", 0), len(self.data["opportunities"]) + 1)
             self.assertIn('href="#main"', text)
             self.assertNotRegex(text, r"\{\{[A-Z0-9_]+\}\}")
 
@@ -55,13 +56,16 @@ class RenderContractTests(unittest.TestCase):
                 self.assertIn(html.escape(record["program"], quote=True), text)
 
     def test_card_status_and_application_link_counts(self):
+        status_counts = Counter(record["status"] for record in self.data["opportunities"])
+        application_count = sum(1 for record in self.data["opportunities"] if record["application_url"])
+        closing_soon_count = sum(1 for record in self.data["opportunities"] if record["closing_soon"])
         for profile in ("primary", "mirror"):
             text, _ = self.parsed(profile)
-            self.assertEqual(len(re.findall(r'<article class="card card-open"', text)), 22)
-            self.assertEqual(len(re.findall(r'<article class="card card-upcoming"', text)), 2)
-            self.assertEqual(len(re.findall(r'<article class="card card-closed"', text)), 8)
-            self.assertEqual(len(re.findall(r'class="button apply-link"', text)), 22)
-            self.assertEqual(len(re.findall(r'badge badge-soon', text)), 3)
+            self.assertEqual(len(re.findall(r'<article class="card card-open"', text)), status_counts["open"])
+            self.assertEqual(len(re.findall(r'<article class="card card-upcoming"', text)), status_counts["upcoming"])
+            self.assertEqual(len(re.findall(r'<article class="card card-closed"', text)), status_counts["closed"])
+            self.assertEqual(len(re.findall(r'class="button apply-link"', text)), application_count)
+            self.assertEqual(len(re.findall(r'<span class="badge badge-soon"', text)), closing_soon_count)
 
     def test_no_external_runtime_dependencies(self):
         for profile in ("primary", "mirror"):
@@ -101,6 +105,42 @@ class RenderContractTests(unittest.TestCase):
             self.assertNotIn('href="./public_opportunities.json"', text)
             self.assertNotIn('href="provenance.json"', text)
             self.assertNotIn('href="./provenance.json"', text)
+
+    def test_root_relative_time_machine_fetch_paths(self):
+        for profile in ("primary", "mirror"):
+            text, _ = self.parsed(profile)
+            self.assertIn('fetch("/scientific-resources/snapshots/index.json"', text)
+            self.assertIn('item.data_url', text)
+            self.assertIn('item.change_manifest_url', text)
+            self.assertNotIn('"./snapshots/', text)
+            self.assertNotIn('"snapshots/', text)
+
+    def test_time_machine_updates_visible_snapshot_summary_surfaces(self):
+        expected_ids = (
+            "page-open-count",
+            "summary-total-count",
+            "summary-open-count",
+            "summary-upcoming-count",
+            "summary-closed-count",
+            "snapshot-date",
+            "snapshot-timezone",
+        )
+        expected_assignments = (
+            "pageOpenCount.textContent = data.counts.open;",
+            "summaryTotalCount.textContent = data.counts.total;",
+            "summaryOpenCount.textContent = data.counts.open;",
+            "summaryUpcomingCount.textContent = data.counts.upcoming;",
+            "summaryClosedCount.textContent = data.counts.closed;",
+            "snapshotDate.textContent = data.page_date;",
+            'snapshotDate.setAttribute("datetime", data.page_date);',
+            "snapshotTimezone.textContent = data.page_timezone;",
+        )
+        for profile in ("primary", "mirror"):
+            text, _ = self.parsed(profile)
+            for element_id in expected_ids:
+                self.assertEqual(text.count(f'id="{element_id}"'), 1)
+            for assignment in expected_assignments:
+                self.assertIn(assignment, text)
 
     def test_visible_source_repository_link_in_both_profiles(self):
         for profile in ("primary", "mirror"):

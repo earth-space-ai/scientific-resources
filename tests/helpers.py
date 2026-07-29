@@ -12,6 +12,7 @@ DATA_PATH = ROOT / "data" / "opportunities.json"
 SCHEMA_PATH = ROOT / "data" / "schema.json"
 PROFILES_PATH = ROOT / "src" / "site_profiles.json"
 DIST = ROOT / "dist"
+HISTORY = ROOT / "data" / "history"
 
 
 def load_json(path: Path):
