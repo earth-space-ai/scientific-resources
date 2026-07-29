@@ -3,7 +3,7 @@
   "schema_version": "1.0.0",
   "page_date": "2026-07-29",
   "page_timezone": "America/Los_Angeles",
-  "verified_at": "2026-07-29T09:39:41Z",
+  "verified_at": "2026-07-29T22:34:02Z",
   "methodology": {
     "evidence_policy": "Only provider, agency, facility, foundation, or provider-linked application pages were accepted as evidence. Aggregators were not used.",
     "endpoint_rule": "Endpoint liveness and program openness are checked separately. A live page or form can belong to a closed or repurposed call; a moved page can point to a valid new route.",
@@ -16,9 +16,9 @@
   },
   "counts": {
     "total": 48,
-    "open": 38,
+    "open": 37,
     "upcoming": 1,
-    "closed": 9
+    "closed": 10
   },
   "opportunities": [
     {
@@ -1332,25 +1332,25 @@
       "provider": "National Radio Astronomy Observatory",
       "group": "hpc",
       "group_label": "HPC & GPU allocations",
-      "status": "open",
+      "status": "closed",
       "amount": "VLA, GBT, VLBA/HSA/GMVA observing time; about 3,300 VLA, 2,000 GBT, and 965 VLBA hours plus joint routes",
       "deadline": "July 29, 2026, 17:00 EDT / 21:00 UTC",
-      "next_deadline": "2026-07-29",
-      "deadline_kind": "fixed",
-      "closing_soon": true,
-      "eligibility": "Qualified scientists worldwide regardless of institution or nationality; extremely near-term.",
-      "endpoint_note": "Official NRAO 2027A call is still before its 2026-07-29 21:00 UTC deadline for this proposed snapshot.",
-      "application_url": "https://science.nrao.edu/observing/call-for-proposals/2027a",
-      "apply_label": "Submit proposal",
+      "next_deadline": null,
+      "deadline_kind": "closed",
+      "closing_soon": false,
+      "eligibility": "Qualified scientists worldwide regardless of institution or nationality; the 2027A submission window is closed.",
+      "endpoint_note": "Official NRAO 2027A call remains published, but its July 29, 2026, 17:00 EDT / 21:00 UTC submission deadline has passed.",
+      "application_url": null,
+      "apply_label": null,
       "official_source_urls": [
         "https://science.nrao.edu/observing/call-for-proposals/2027a"
       ],
-      "verified_at": "2026-07-29T09:39:41Z",
+      "verified_at": "2026-07-29T22:34:02Z",
       "verified_date": "2026-07-29",
       "first_seen": "2026-07-29",
       "last_verified": "2026-07-29",
-      "retired_at": null,
-      "retirement_reason": null,
+      "retired_at": "2026-07-29",
+      "retirement_reason": "The published 2027A proposal submission deadline passed at 21:00 UTC on 2026-07-29.",
       "superseded_by": null,
       "reactivated_at": null
     },
