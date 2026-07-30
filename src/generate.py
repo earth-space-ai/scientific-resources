@@ -18,9 +18,10 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlsplit
 
-BUILD_SPEC_VERSION = "1.0.0"
-SNAPSHOT_INDEX_VERSION = "1.0.0"
-CHANGE_MANIFEST_VERSION = "1.0.0"
+BUILD_SPEC_VERSION = "1.1.0"
+SNAPSHOT_INDEX_VERSION = "1.1.0"
+CHANGE_MANIFEST_VERSION = "1.1.0"
+FUNDING_PULSE_VERSION = "1.0.0"
 EXPECTED_PROFILE_URLS = {
     "primary": "https://earth-space-ai.org/scientific-resources",
     "mirror": "https://huangzesen.github.io/scientific-resources/",
@@ -32,6 +33,40 @@ GROUP_LABELS = {
     "grants": "AI-for-science & open-science grants",
 }
 STATUS_LABELS = {"open": "Open", "upcoming": "Upcoming", "closed": "Archived"}
+RELEVANCE_CLASSES = {"direct", "adjacent", "unrelated"}
+CURATED_RELEVANCE_CLASSES = {"direct", "adjacent"}
+SPONSOR_SECTORS = {
+    "us_federal",
+    "us_state_local",
+    "foundation_nonprofit",
+    "industry",
+    "university_consortium",
+    "international_public",
+    "other",
+}
+ACCOUNTING_BUCKETS = {
+    "program_pool",
+    "per_award",
+    "cash",
+    "credit",
+    "compute",
+    "facility",
+    "prize",
+    "fellowship",
+    "other_in_kind",
+}
+RESOURCE_KINDS = {
+    "cash",
+    "cloud_credit",
+    "api_credit",
+    "compute_access",
+    "facility_access",
+    "fellowship",
+    "prize",
+    "other_in_kind",
+}
+ROLLUP_POLICIES = {"self", "parent_only", "child_only", "exclude"}
+QUANTIFICATION_STATUSES = {"quantified", "partially_quantified", "unquantified", "individualized"}
 ARCHIVE_LEAD_DAYS = 15
 CLOSING_SOON_DAYS = 10
 RECORD_FIELDS = {
@@ -59,6 +94,9 @@ RECORD_FIELDS = {
     "retirement_reason",
     "superseded_by",
     "reactivated_at",
+    "relevance",
+    "landscape",
+    "resources",
 }
 LEGACY_RECORD_FIELDS = RECORD_FIELDS - {
     "first_seen",
@@ -67,7 +105,11 @@ LEGACY_RECORD_FIELDS = RECORD_FIELDS - {
     "retirement_reason",
     "superseded_by",
     "reactivated_at",
+    "relevance",
+    "landscape",
+    "resources",
 }
+RECORD_FIELDS_V1_0 = RECORD_FIELDS - {"relevance", "landscape", "resources"}
 OPERATIONAL_LIFECYCLE_FIELDS = {"first_seen", "last_verified", "verified_at", "verified_date"}
 LIFECYCLE_TRANSITION_FIELDS = {"retired_at", "retirement_reason", "superseded_by", "reactivated_at"}
 HISTORY_ROOT_RELATIVE = "/scientific-resources/snapshots"
@@ -124,6 +166,202 @@ def status_counts(records: list[dict]) -> dict[str, int]:
     return {key: observed.get(key, 0) for key in ("open", "upcoming", "closed")}
 
 
+def record_is_curated(record: dict) -> bool:
+    relevance = record.get("relevance")
+    if not isinstance(relevance, dict):
+        return True
+    return relevance.get("classification") in CURATED_RELEVANCE_CLASSES
+
+
+def view_records(records: list[dict], view_id: str) -> list[dict]:
+    if view_id == "all":
+        return list(records)
+    if view_id == "curated":
+        return [record for record in records if record_is_curated(record)]
+    raise ValueError(f"unsupported view: {view_id}")
+
+
+def view_counts(records: list[dict]) -> dict[str, dict[str, int]]:
+    curated = view_records(records, "curated")
+    all_counts = {"total": len(records), **status_counts(records)}
+    curated_counts = {"total": len(curated), **status_counts(curated)}
+    return {"curated": curated_counts, "all": all_counts}
+
+
+def relevance_counts(records: list[dict]) -> dict[str, int]:
+    observed = Counter(record.get("relevance", {}).get("classification", "legacy") for record in records)
+    return {key: observed.get(key, 0) for key in ("direct", "adjacent", "unrelated")}
+
+
+def refresh_derived_counts(data: dict) -> None:
+    records = data["opportunities"]
+    data["counts"] = {"total": len(records), **status_counts(records)}
+    if data.get("schema_version") == "1.1.0":
+        data["view_counts"] = view_counts(records)
+        data["relevance_counts"] = relevance_counts(records)
+
+
+def current_records(records: list[dict]) -> list[dict]:
+    return [record for record in records if record["status"] in {"open", "upcoming"}]
+
+
+def measure_amount_values(amount: dict) -> tuple[float, float]:
+    exact = amount.get("exact")
+    minimum = amount.get("minimum")
+    maximum = amount.get("maximum")
+    if exact is not None:
+        return float(exact), float(exact)
+    return (float(minimum or 0), float(maximum or 0))
+
+
+def pulse_rollup_bucket(measure: dict) -> str | None:
+    bucket = measure["accounting_bucket"]
+    if bucket in {"program_pool", "per_award", "credit", "compute", "facility", "prize", "fellowship", "other_in_kind"}:
+        return bucket
+    return None
+
+
+def build_funding_pulse(
+    data: dict,
+    manifest: dict | None = None,
+    *,
+    snapshot_id: str | None = None,
+    baseline_available: bool = False,
+    baseline_reason: str | None = "previous_snapshot_has_no_funding_pulse",
+) -> dict:
+    """Build deterministic pulse data from structured resource facts only."""
+    records = data["opportunities"]
+    active_records = current_records(records)
+    coverage = Counter(record["resources"]["quantification_status"] for record in records)
+    active_coverage = Counter(record["resources"]["quantification_status"] for record in active_records)
+    base = {
+        "schema_version": FUNDING_PULSE_VERSION,
+        "snapshot_id": snapshot_id,
+        "as_of_date": data["page_date"],
+        "scope": {
+            "dataset": "officially quantified visible resources in this maintained database snapshot",
+            "exhaustiveness_warning": "This is not all funding in existence and not an internet-wide estimate.",
+            "current_record_scope": "Only open and upcoming records contribute to current resource buckets.",
+            "us_sponsor_scope": "U.S.-only aggregates include records with landscape.sponsor_country=US only.",
+        },
+        "record_totals": {"total": len(records), **status_counts(records), "current": len(active_records)},
+        "view_record_counts": view_counts(records),
+        "snapshot_delta": {
+            "counts": (manifest or {}).get("counts", {key: 0 for key in ("added", "changed", "retired", "reactivated", "unchanged")}),
+            "change_manifest_url": f"{HISTORY_ROOT_RELATIVE}/{snapshot_id}/change_manifest.json" if snapshot_id else None,
+            "baseline_available": baseline_available,
+            "baseline_reason": None if baseline_available else baseline_reason,
+        },
+        "coverage": {
+            "records_total": len(records),
+            "current_records": len(active_records),
+            "archived_records": len(records) - len(active_records),
+            "quantified_records": coverage.get("quantified", 0),
+            "partially_quantified_records": coverage.get("partially_quantified", 0),
+            "unquantified_records": coverage.get("unquantified", 0),
+            "individualized_records": coverage.get("individualized", 0),
+            "quantified_current_records": active_coverage.get("quantified", 0),
+            "partially_quantified_current_records": active_coverage.get("partially_quantified", 0),
+            "unquantified_current_records": active_coverage.get("unquantified", 0),
+            "individualized_current_records": active_coverage.get("individualized", 0),
+            "unknown_coverage_note": "Unknown and individualized opportunities remain verified records but are excluded from quantified totals.",
+        },
+        "program_pools": [],
+        "per_award_ranges": [],
+        "credits": [],
+        "compute_facility": [],
+        "prizes_fellowships": [],
+        "other_in_kind": [],
+        "suppressed": [],
+        "warnings": [
+            "Program pools, per-award ranges, credits, compute/facility allocations, fellowships/prizes, and in-kind support are not interchangeable.",
+            "Per-award ceilings are not multiplied by guessed award counts.",
+            "Currencies are not converted or summed across currencies without a dated official conversion source.",
+        ],
+    }
+    buckets: dict[tuple[str, str, str, str, str], dict] = {}
+    seen_double_count: dict[tuple[str, str], tuple[str, str]] = {}
+    for record in active_records:
+        sponsor_scope = "us_sponsor" if record["landscape"]["sponsor_country"] == "US" else "all_only"
+        for measure in record["resources"].get("measures", []):
+            if not measure["aggregation"]["include_in_rollup"]:
+                base["suppressed"].append({
+                    "record_id": record["id"],
+                    "measure_id": measure["measure_id"],
+                    "reason": "excluded_by_record_resource_policy",
+                })
+                continue
+            bucket_kind = pulse_rollup_bucket(measure)
+            if not bucket_kind:
+                continue
+            unit = measure["unit"]
+            period = measure["period"]
+            amount = measure["amount"]
+            rollup_key = measure["aggregation"]["rollup_group_key"]
+            key = (bucket_kind, rollup_key)
+            double_key = (bucket_kind, measure["aggregation"]["double_count_key"])
+            if double_key in seen_double_count:
+                base["suppressed"].append({
+                    "record_id": record["id"],
+                    "measure_id": measure["measure_id"],
+                    "reason": "duplicate_source_or_umbrella_child",
+                    "kept_record_id": seen_double_count[double_key][0],
+                    "kept_measure_id": seen_double_count[double_key][1],
+                })
+                continue
+            seen_double_count[double_key] = (record["id"], measure["measure_id"])
+            entry = buckets.setdefault(key, {
+                "bucket_id": rollup_key.lower().replace("|", "-").replace(":", "-").replace("_", "-").replace(" ", "-"),
+                "label": rollup_key,
+                "scope": sponsor_scope,
+                "accounting_bucket": bucket_kind,
+                "resource_kind": measure["resource_kind"],
+                "unit": unit,
+                "period": period,
+                "amount": {"minimum_sum": 0, "maximum_sum": 0},
+                "records": [],
+                "source_urls": [],
+                "aggregation_note": "Aggregated only within identical resource kind, unit, basis bucket, period, and current status.",
+            })
+            min_value, max_value = measure_amount_values(amount)
+            entry["amount"]["minimum_sum"] += min_value
+            entry["amount"]["maximum_sum"] += max_value
+            entry["records"].append({"id": record["id"], "measure_id": measure["measure_id"]})
+            for source in measure["source_refs"]:
+                if source["url"] not in entry["source_urls"]:
+                    entry["source_urls"].append(source["url"])
+    for entry in sorted(buckets.values(), key=lambda item: item["bucket_id"]):
+        if entry["accounting_bucket"] == "program_pool":
+            base["program_pools"].append(entry)
+        elif entry["accounting_bucket"] == "per_award":
+            base["per_award_ranges"].append(entry)
+        elif entry["accounting_bucket"] == "credit":
+            base["credits"].append(entry)
+        elif entry["accounting_bucket"] in {"compute", "facility"}:
+            base["compute_facility"].append(entry)
+        elif entry["accounting_bucket"] in {"prize", "fellowship"}:
+            base["prizes_fellowships"].append(entry)
+        else:
+            base["other_in_kind"].append(entry)
+    return base
+
+
+def funding_pulse_summary(pulse: dict | None) -> dict:
+    if not pulse:
+        return {"state": "legacy_pulse_unavailable"}
+    coverage = pulse["coverage"]
+    return {
+        "state": "available",
+        "program_pool_buckets": len(pulse["program_pools"]),
+        "per_award_buckets": len(pulse["per_award_ranges"]),
+        "credit_buckets": len(pulse["credits"]),
+        "compute_facility_buckets": len(pulse["compute_facility"]),
+        "prize_fellowship_buckets": len(pulse["prizes_fellowships"]),
+        "quantified_current_records": coverage["quantified_current_records"],
+        "unquantified_current_records": coverage["unquantified_current_records"],
+    }
+
+
 def validate_lifecycle(record: dict, label: str) -> None:
     first_seen = parse_date(record["first_seen"], f"{label}.first_seen")
     last_verified = parse_date(record["last_verified"], f"{label}.last_verified")
@@ -164,15 +402,177 @@ def validate_lifecycle(record: dict, label: str) -> None:
             raise ValueError(f"{label} reactivated_at must not be after retired_at while retired")
 
 
+def validate_relevance(record: dict, label: str) -> None:
+    relevance = record["relevance"]
+    required = {"classification", "public_reason", "signals", "assessed_at", "assessed_by"}
+    if set(relevance) != required:
+        raise ValueError(f"{label}.relevance has an unexpected shape")
+    if relevance["classification"] not in RELEVANCE_CLASSES:
+        raise ValueError(f"{label}.relevance.classification is unsupported")
+    if not isinstance(relevance["public_reason"], str) or not relevance["public_reason"].strip():
+        raise ValueError(f"{label}.relevance.public_reason is required")
+    signals = relevance["signals"]
+    if not isinstance(signals, list) or not signals or len(signals) != len(set(signals)):
+        raise ValueError(f"{label}.relevance.signals must be a unique non-empty list")
+    for signal in signals:
+        if not isinstance(signal, str) or not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", signal):
+            raise ValueError(f"{label}.relevance.signals must be public slugs")
+    parse_timestamp(relevance["assessed_at"], f"{label}.relevance.assessed_at")
+    if relevance["assessed_by"] != "researchassistant":
+        raise ValueError(f"{label}.relevance.assessed_by must be researchassistant")
+
+
+def validate_landscape(record: dict, label: str) -> None:
+    landscape = record["landscape"]
+    required = {"sponsor_sector", "sponsor_country", "applicant_geographies", "recipient_types", "science_domains"}
+    if set(landscape) != required:
+        raise ValueError(f"{label}.landscape has an unexpected shape")
+    if landscape["sponsor_sector"] not in SPONSOR_SECTORS:
+        raise ValueError(f"{label}.landscape.sponsor_sector is unsupported")
+    sponsor_country = landscape["sponsor_country"]
+    if not re.fullmatch(r"[A-Z]{2}|MULTINATIONAL|UNKNOWN", sponsor_country or ""):
+        raise ValueError(f"{label}.landscape.sponsor_country is unsupported")
+    for key in ("applicant_geographies", "recipient_types", "science_domains"):
+        values = landscape[key]
+        if not isinstance(values, list) or not values or len(values) != len(set(values)):
+            raise ValueError(f"{label}.landscape.{key} must be a unique non-empty list")
+        for value in values:
+            if not isinstance(value, str) or not value:
+                raise ValueError(f"{label}.landscape.{key} values must be non-empty strings")
+
+
+def validate_resource_measure(record: dict, measure: dict, label: str) -> None:
+    required = {
+        "measure_id",
+        "resource_kind",
+        "accounting_bucket",
+        "basis",
+        "status_scope",
+        "amount",
+        "unit",
+        "period",
+        "source_refs",
+        "aggregation",
+        "warnings",
+    }
+    if set(measure) != required:
+        raise ValueError(f"{label} has an unexpected shape")
+    if measure["resource_kind"] not in RESOURCE_KINDS:
+        raise ValueError(f"{label}.resource_kind is unsupported")
+    if measure["accounting_bucket"] not in ACCOUNTING_BUCKETS:
+        raise ValueError(f"{label}.accounting_bucket is unsupported")
+    if measure["status_scope"] not in {"current_only", "archive_only", "current_and_archive"}:
+        raise ValueError(f"{label}.status_scope is unsupported")
+    amount = measure["amount"]
+    if set(amount) != {"minimum", "maximum", "exact", "display"}:
+        raise ValueError(f"{label}.amount has an unexpected shape")
+    exact = amount["exact"]
+    minimum = amount["minimum"]
+    maximum = amount["maximum"]
+    for value_name, value in (("minimum", minimum), ("maximum", maximum), ("exact", exact)):
+        if value is not None and (not isinstance(value, (int, float)) or isinstance(value, bool) or value < 0):
+            raise ValueError(f"{label}.amount.{value_name} must be a non-negative number or null")
+    if exact is not None and (minimum is not None or maximum is not None):
+        raise ValueError(f"{label}.amount.exact is mutually exclusive with min/max")
+    if minimum is not None and maximum is not None and minimum > maximum:
+        raise ValueError(f"{label}.amount minimum exceeds maximum")
+    unit = measure["unit"]
+    if set(unit) != {"kind", "code", "native_label"}:
+        raise ValueError(f"{label}.unit has an unexpected shape")
+    if unit["kind"] not in {"currency", "credit_currency", "allocation_credit", "qpu_hour", "node_hour", "service_credit", "count", "unknown"}:
+        raise ValueError(f"{label}.unit.kind is unsupported")
+    period = measure["period"]
+    if set(period) != {"kind", "display"} or period["kind"] not in {"one_time", "annual", "cycle", "project_duration", "unknown"}:
+        raise ValueError(f"{label}.period is unsupported")
+    source_refs = measure["source_refs"]
+    if not isinstance(source_refs, list) or not source_refs:
+        raise ValueError(f"{label}.source_refs must be non-empty")
+    official_urls = set(record["official_source_urls"])
+    for index, source_ref in enumerate(source_refs):
+        if set(source_ref) != {"url", "evidence_type", "retrieved_at"}:
+            raise ValueError(f"{label}.source_refs[{index}] has an unexpected shape")
+        if source_ref["url"] not in official_urls:
+            raise ValueError(f"{label}.source_refs[{index}].url must be an official source URL on the record")
+        parse_timestamp(source_ref["retrieved_at"], f"{label}.source_refs[{index}].retrieved_at")
+    aggregation = measure["aggregation"]
+    if set(aggregation) != {"include_in_rollup", "rollup_group_key", "double_count_key", "dedupe_priority"}:
+        raise ValueError(f"{label}.aggregation has an unexpected shape")
+    if not isinstance(aggregation["include_in_rollup"], bool):
+        raise ValueError(f"{label}.aggregation.include_in_rollup must be boolean")
+    if not isinstance(aggregation["dedupe_priority"], int):
+        raise ValueError(f"{label}.aggregation.dedupe_priority must be an integer")
+    if not isinstance(measure["warnings"], list):
+        raise ValueError(f"{label}.warnings must be a list")
+
+
+def validate_resources(record: dict, label: str) -> None:
+    resources = record["resources"]
+    required = {"quantification_status", "confidence", "reason", "effective_date", "source_refs", "relationship", "measures"}
+    if set(resources) != required:
+        raise ValueError(f"{label}.resources has an unexpected shape")
+    if resources["quantification_status"] not in QUANTIFICATION_STATUSES:
+        raise ValueError(f"{label}.resources.quantification_status is unsupported")
+    if resources["confidence"] not in {"official_explicit", "official_partial", "unresolved"}:
+        raise ValueError(f"{label}.resources.confidence is unsupported")
+    parse_date(resources["effective_date"], f"{label}.resources.effective_date")
+    if not isinstance(resources["reason"], str) or not resources["reason"].strip():
+        raise ValueError(f"{label}.resources.reason is required")
+    relationship = resources["relationship"]
+    if set(relationship) != {"parent_id", "rollup_policy"} or relationship["rollup_policy"] not in ROLLUP_POLICIES:
+        raise ValueError(f"{label}.resources.relationship is unsupported")
+    if relationship["parent_id"] is not None and not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", relationship["parent_id"]):
+        raise ValueError(f"{label}.resources.relationship.parent_id must be a stable ID or null")
+    if not isinstance(resources["source_refs"], list) or not resources["source_refs"]:
+        raise ValueError(f"{label}.resources.source_refs must be non-empty")
+    official_urls = set(record["official_source_urls"])
+    for index, source_ref in enumerate(resources["source_refs"]):
+        if set(source_ref) != {"url", "evidence_type", "retrieved_at"}:
+            raise ValueError(f"{label}.resources.source_refs[{index}] has an unexpected shape")
+        if source_ref["url"] not in official_urls:
+            raise ValueError(f"{label}.resources.source_refs[{index}].url must be an official source URL")
+        parse_timestamp(source_ref["retrieved_at"], f"{label}.resources.source_refs[{index}].retrieved_at")
+    measures = resources["measures"]
+    if not isinstance(measures, list):
+        raise ValueError(f"{label}.resources.measures must be a list")
+    measure_ids = [measure.get("measure_id") for measure in measures]
+    if len(measure_ids) != len(set(measure_ids)):
+        raise ValueError(f"{label}.resources.measures must have unique measure IDs")
+    for index, measure in enumerate(measures):
+        validate_resource_measure(record, measure, f"{label}.resources.measures[{index}]")
+    if not measures and resources["quantification_status"] not in {"unquantified", "individualized"}:
+        raise ValueError(f"{label}.resources quantification status requires measures")
+
+
+def validate_credit_rollup_compatibility(records: list[dict]) -> None:
+    platforms_by_key: dict[str, set[str]] = {}
+    records_by_key: dict[str, set[str]] = {}
+    for record in records:
+        for measure in record["resources"].get("measures", []):
+            if measure["accounting_bucket"] != "credit" or not measure["aggregation"]["include_in_rollup"]:
+                continue
+            key = measure["aggregation"]["rollup_group_key"]
+            platforms_by_key.setdefault(key, set()).add(measure["unit"]["native_label"])
+            records_by_key.setdefault(key, set()).add(record["id"])
+    for key, platforms in platforms_by_key.items():
+        if len(platforms) > 1:
+            records = ", ".join(sorted(records_by_key[key]))
+            raise ValueError(
+                f"credit rollup key mixes provider/platform-specific credits without compatibility metadata: {key} ({records})"
+            )
+
+
 def validate_public_data(
     data: dict,
     *,
     allow_legacy_lifecycle: bool = False,
+    allow_legacy_schema: bool = False,
     expected_record_count: int | None = None,
     expected_status_counts: dict[str, int] | None = None,
 ) -> None:
     """Apply release-blocking semantic checks before rendering."""
-    expected_top = {
+    legacy_allowed = allow_legacy_schema or allow_legacy_lifecycle
+    schema_version = data.get("schema_version")
+    expected_top_legacy = {
         "title",
         "schema_version",
         "page_date",
@@ -182,9 +582,16 @@ def validate_public_data(
         "counts",
         "opportunities",
     }
+    expected_top_current = expected_top_legacy | {"view_policy", "view_counts", "relevance_counts"}
+    if schema_version == "1.0.0" and legacy_allowed:
+        expected_top = expected_top_legacy
+    elif schema_version == "1.1.0":
+        expected_top = expected_top_current
+    else:
+        raise ValueError("unsupported dataset identity or schema version")
     if set(data) != expected_top:
         raise ValueError("canonical dataset has an unexpected top-level shape")
-    if data["title"] != "Scientific Resource Tracker" or data["schema_version"] != "1.0.0":
+    if data["title"] != "Scientific Resource Tracker":
         raise ValueError("unsupported dataset identity or schema version")
     snapshot = parse_date(data["page_date"], "page_date")
     parse_timestamp(data["verified_at"], "verified_at")
@@ -207,14 +614,28 @@ def validate_public_data(
         raise ValueError("declared and observed status counts must match")
     if expected_status_counts is not None and status_counts(records) != expected_status_counts:
         raise ValueError("history snapshot status counts must match its index summary")
+    if schema_version == "1.1.0":
+        expected_policy = {
+            "default_view": "curated",
+            "curated_classes": ["direct", "adjacent"],
+            "all_scope_label": "complete verified database from documented scans",
+        }
+        if data["view_policy"] != expected_policy:
+            raise ValueError("view policy must match the approved public view contract")
+        if data["view_counts"] != view_counts(records):
+            raise ValueError("view_counts must be derived from records")
+        if data["view_counts"]["all"] != observed_counts:
+            raise ValueError("all view counts must match canonical counts")
+        if data["relevance_counts"] != relevance_counts(records):
+            raise ValueError("relevance_counts must be derived from records")
 
     archive_cutoff = snapshot + timedelta(days=ARCHIVE_LEAD_DAYS)
     soon_cutoff = snapshot + timedelta(days=CLOSING_SOON_DAYS)
     for index, record in enumerate(records):
         label = f"opportunities[{index}]"
         fields = set(record)
-        allowed_shapes = {frozenset(RECORD_FIELDS)}
-        if allow_legacy_lifecycle:
+        allowed_shapes = {frozenset(RECORD_FIELDS if schema_version == "1.1.0" else RECORD_FIELDS_V1_0)}
+        if legacy_allowed:
             allowed_shapes.add(frozenset(LEGACY_RECORD_FIELDS))
         if frozenset(fields) not in allowed_shapes:
             raise ValueError(f"{label} has an unexpected public field shape")
@@ -267,11 +688,17 @@ def validate_public_data(
             raise ValueError(f"{label} must have unique official-source URLs")
         for source_index, source_url in enumerate(sources):
             require_public_https(source_url, f"{label}.official_source_urls[{source_index}]")
+        if schema_version == "1.1.0":
+            validate_relevance(record, label)
+            validate_landscape(record, label)
+            validate_resources(record, label)
+    if schema_version == "1.1.0":
+        validate_credit_rollup_compatibility(records)
 
 
-def summarize_snapshot(data: dict, data_sha: str, source: dict) -> dict:
+def summarize_snapshot(data: dict, data_sha: str, source: dict, pulse: dict | None = None) -> dict:
     snapshot_id = snapshot_id_for(data_sha, data["page_date"])
-    return {
+    summary = {
         "snapshot_id": snapshot_id,
         "page_date": data["page_date"],
         "page_timezone": data["page_timezone"],
@@ -284,6 +711,15 @@ def summarize_snapshot(data: dict, data_sha: str, source: dict) -> dict:
         "change_manifest_url": f"{HISTORY_ROOT_RELATIVE}/{snapshot_id}/change_manifest.json",
         "source": source,
     }
+    if data["schema_version"] == "1.1.0":
+        summary["schema_version"] = data["schema_version"]
+        summary["view_counts"] = view_counts(data["opportunities"])
+        summary["relevance_counts"] = relevance_counts(data["opportunities"])
+        summary["funding_pulse_summary"] = funding_pulse_summary(pulse)
+        summary["funding_pulse_url"] = f"{HISTORY_ROOT_RELATIVE}/{snapshot_id}/funding_pulse.json"
+        if pulse:
+            summary["funding_pulse_sha256"] = sha256_bytes(canonical_json_bytes(pulse))
+    return summary
 
 
 def substantive_changed_fields(previous: dict, current: dict) -> list[str]:
@@ -349,6 +785,8 @@ def diff_snapshots(previous: dict | None, current: dict, snapshot_id: str) -> di
 
     changes = []
     counts = {key: 0 for key in ("added", "changed", "retired", "reactivated", "unchanged")}
+    relevance_changed = 0
+    resources_changed = 0
     for record_id in sorted(current_by_id):
         current_record = current_by_id[record_id]
         previous_record = previous_by_id.get(record_id)
@@ -371,6 +809,10 @@ def diff_snapshots(previous: dict | None, current: dict, snapshot_id: str) -> di
             else:
                 change_type = "unchanged"
         counts[change_type] += 1
+        if "relevance" in changed_fields:
+            relevance_changed += 1
+        if "resources" in changed_fields:
+            resources_changed += 1
         changes.append(
             {
                 "id": record_id,
@@ -378,19 +820,36 @@ def diff_snapshots(previous: dict | None, current: dict, snapshot_id: str) -> di
                 "previous_status": previous_record.get("status") if previous_record else None,
                 "current_status": current_record["status"],
                 "changed_fields": changed_fields,
+                "previous_relevance": previous_record.get("relevance", {}).get("classification") if previous_record else None,
+                "current_relevance": current_record.get("relevance", {}).get("classification"),
+                "view_membership_changed": (
+                    record_is_curated(previous_record) if previous_record else None
+                ) != record_is_curated(current_record),
+                "funding_quantification_changed": "resources" in changed_fields,
                 "previous_record_sha256": record_fingerprint(previous_record) if previous_record else None,
                 "current_record_sha256": record_fingerprint(current_record),
             }
         )
 
+    if current["schema_version"] == "1.1.0":
+        counts["relevance_changed"] = relevance_changed
+        counts["funding_quantification_changed"] = resources_changed
     return {
         "schema_version": CHANGE_MANIFEST_VERSION,
         "snapshot_id": snapshot_id,
         "previous_snapshot_id": snapshot_id_for(sha256_bytes(canonical_json_bytes(previous)), previous["page_date"]) if previous else None,
-        "comparison_basis": "stable-id-lifecycle",
+        "comparison_basis": "stable-id-lifecycle-relevance-funding" if current["schema_version"] == "1.1.0" else "stable-id-lifecycle",
         "current_data_sha256": sha256_bytes(canonical_json_bytes(current)),
         "previous_data_sha256": sha256_bytes(canonical_json_bytes(previous)) if previous else None,
         "counts": counts,
+        "funding_pulse_delta": {
+            "baseline_available": bool(previous and previous.get("schema_version") == "1.1.0"),
+            "baseline_reason": None if previous and previous.get("schema_version") == "1.1.0" else "previous_snapshot_has_no_funding_pulse",
+            "program_pool_bucket_changes": [],
+            "per_award_bucket_changes": [],
+            "in_kind_bucket_changes": [],
+            "coverage_delta": {},
+        } if current["schema_version"] == "1.1.0" else None,
         "changes": changes,
     }
 
@@ -409,6 +868,7 @@ def load_history(history_dir: Path) -> tuple[dict, dict[str, tuple[dict, bytes, 
         validate_public_data(
             data,
             allow_legacy_lifecycle=True,
+            allow_legacy_schema=True,
             expected_record_count=item["record_count"],
             expected_status_counts=item["status_counts"],
         )
@@ -425,7 +885,7 @@ def load_history(history_dir: Path) -> tuple[dict, dict[str, tuple[dict, bytes, 
 def validate_history_index(index: dict) -> None:
     if set(index) != {"schema_version", "title", "current_snapshot_id", "generated_from", "snapshots"}:
         raise ValueError("history index has an unexpected shape")
-    if index["schema_version"] != SNAPSHOT_INDEX_VERSION:
+    if index["schema_version"] not in {"1.0.0", SNAPSHOT_INDEX_VERSION}:
         raise ValueError("unsupported history index version")
     validate_snapshot_id(index["current_snapshot_id"], "current_snapshot_id")
     snapshots = index["snapshots"]
@@ -434,11 +894,19 @@ def validate_history_index(index: dict) -> None:
     seen: set[str] = set()
     previous_key = None
     for item in snapshots:
-        required = {
+        required_legacy = {
             "snapshot_id", "page_date", "page_timezone", "verified_at", "canonical_data_sha256",
             "record_count", "status_counts", "stable_id_sha256", "data_url", "change_manifest_url", "source",
         }
-        if set(item) != required:
+        required_current = required_legacy | {
+            "schema_version",
+            "view_counts",
+            "relevance_counts",
+            "funding_pulse_summary",
+            "funding_pulse_url",
+            "funding_pulse_sha256",
+        }
+        if frozenset(item) not in {frozenset(required_legacy), frozenset(required_current)}:
             raise ValueError("history index snapshot has an unexpected shape")
         if item["snapshot_id"] in seen:
             raise ValueError("duplicate history snapshot ID")
@@ -448,6 +916,8 @@ def validate_history_index(index: dict) -> None:
             raise ValueError("history data URL must be root-relative")
         if item["change_manifest_url"] != f"{HISTORY_ROOT_RELATIVE}/{item['snapshot_id']}/change_manifest.json":
             raise ValueError("history manifest URL must be root-relative")
+        if "funding_pulse_url" in item and item["funding_pulse_url"] != f"{HISTORY_ROOT_RELATIVE}/{item['snapshot_id']}/funding_pulse.json":
+            raise ValueError("history funding pulse URL must be root-relative")
         key = (item["page_date"], item["verified_at"], item["canonical_data_sha256"])
         if previous_key is not None and key > previous_key:
             raise ValueError("history snapshots must be newest first")
@@ -457,19 +927,25 @@ def validate_history_index(index: dict) -> None:
 
 
 def validate_change_manifest(manifest: dict, summary: dict, data: dict) -> None:
-    required = {
+    required_legacy = {
         "schema_version", "snapshot_id", "previous_snapshot_id", "comparison_basis",
         "current_data_sha256", "previous_data_sha256", "counts", "changes",
     }
-    if set(manifest) != required or manifest["schema_version"] != CHANGE_MANIFEST_VERSION:
+    required_current = required_legacy | {"funding_pulse_delta"}
+    is_current = data.get("schema_version") == "1.1.0"
+    if set(manifest) != (required_current if is_current else required_legacy):
         raise ValueError("change manifest has an unexpected shape")
+    if manifest["schema_version"] not in {"1.0.0", CHANGE_MANIFEST_VERSION}:
+        raise ValueError("change manifest has an unsupported version")
     if manifest["snapshot_id"] != summary["snapshot_id"]:
         raise ValueError("change manifest snapshot mismatch")
     if manifest["current_data_sha256"] != summary["canonical_data_sha256"]:
         raise ValueError("change manifest data SHA mismatch")
     allowed = {"added", "changed", "retired", "reactivated", "unchanged"}
+    allowed_counts = allowed | ({"relevance_changed", "funding_quantification_changed"} if is_current else set())
     if set(manifest["counts"]) != allowed:
-        raise ValueError("change manifest counts have an unexpected shape")
+        if set(manifest["counts"]) != allowed_counts:
+            raise ValueError("change manifest counts have an unexpected shape")
     ids = {record["id"] for record in data["opportunities"]}
     observed = Counter()
     for change in manifest["changes"]:
@@ -496,7 +972,10 @@ def copy_history_artifacts(profile_dir: Path, history_dir: Path, index: dict) ->
         source_dir = history_dir / "snapshots" / snapshot_id
         target_dir = snapshots_dir / snapshot_id
         target_dir.mkdir(parents=True, exist_ok=True)
-        for name in ("public_opportunities.json", "change_manifest.json"):
+        names = ["public_opportunities.json", "change_manifest.json"]
+        if (source_dir / "funding_pulse.json").exists():
+            names.append("funding_pulse.json")
+        for name in names:
             payload = (source_dir / name).read_bytes()
             (target_dir / name).write_bytes(payload)
             output_hashes[f"snapshots/{snapshot_id}/{name}"] = sha256_bytes(payload)
@@ -548,11 +1027,24 @@ def source_links(record: dict) -> str:
     return "".join(links)
 
 
+def relevance_badge(record: dict) -> str:
+    relevance = record.get("relevance")
+    if not relevance:
+        return '<span class="badge badge-group">Legacy curated snapshot</span>'
+    label = {
+        "direct": "Direct fit",
+        "adjacent": "Adjacent fit",
+        "unrelated": "All-only",
+    }[relevance["classification"]]
+    return f'<span class="badge badge-relevance">{esc(label)}</span>'
+
+
 def card_html(record: dict, archived: bool = False) -> str:
     status = record["status"]
     badges = [f'<span class="badge badge-{status}">{STATUS_LABELS[status]}</span>']
     if record["closing_soon"]:
         badges.append('<span class="badge badge-soon">Closing soon</span>')
+    badges.append(relevance_badge(record))
     if archived:
         badges.append(f'<span class="badge badge-group">{esc(record["group_label"])}</span>')
 
@@ -570,13 +1062,20 @@ def card_html(record: dict, archived: bool = False) -> str:
             "endpoint_note", "retirement_reason",
         )
     ).lower()
+    if record.get("relevance"):
+        search_blob += " " + " ".join(record["relevance"]["signals"]).lower()
+    if record.get("resources"):
+        search_blob += " " + record["resources"]["quantification_status"].lower()
+        search_blob += " " + " ".join(measure["resource_kind"] for measure in record["resources"].get("measures", []))
     retirement_line = ""
     if archived and record.get("retired_at") and record.get("retirement_reason"):
         retirement_line = (
             f'  <p class="retirement"><strong>Archived {esc(record["retired_at"])}:</strong> '
             f'{esc(record["retirement_reason"])}</p>\n'
         )
-    return f'''<article class="card card-{status}" id="card-{esc(record["id"])}" data-status="{status}" data-group="{record["group"]}" data-search="{esc(search_blob)}">
+    data_view = "curated all" if record_is_curated(record) else "all"
+    hidden_class = "" if record_is_curated(record) else " is-hidden"
+    return f'''<article class="card card-{status}{hidden_class}" id="card-{esc(record["id"])}" data-status="{status}" data-group="{record["group"]}" data-view="{data_view}" data-search="{esc(search_blob)}">
   <div class="card-top">
     <p class="provider">{esc(record["provider"])}</p>
     <p class="badges">{"".join(badges)}</p>
@@ -585,6 +1084,7 @@ def card_html(record: dict, archived: bool = False) -> str:
   <dl class="facts">
     <div><dt>Resources</dt><dd>{esc(record["amount"])}</dd></div>
     <div><dt>Deadline</dt><dd>{esc(record["deadline"])}</dd></div>
+    <div><dt>Fit</dt><dd>{esc(record.get("relevance", {}).get("public_reason", "Legacy curated snapshot predates relevance classification."))}</dd></div>
   </dl>
 {retirement_line}  <details>
     <summary>Eligibility and verification notes</summary>
@@ -602,17 +1102,181 @@ def active_sections(records: list[dict]) -> str:
     for group, label in GROUP_LABELS.items():
         group_records = [record for record in records if record["group"] == group and record["status"] != "closed"]
         open_count = sum(record["status"] == "open" for record in group_records)
+        upcoming_count = sum(record["status"] == "upcoming" for record in group_records)
+        count_parts = [f"{open_count} open"]
+        if upcoming_count:
+            count_parts.append(f"{upcoming_count} upcoming")
         cards = "\n".join(card_html(record) for record in group_records)
         sections.append(f'''<section class="resource-group" data-resource-group="{group}" aria-labelledby="heading-{group}">
   <header class="section-heading">
     <h2 id="heading-{group}">{esc(label)}</h2>
-    <p>{open_count} open</p>
+    <p>{" · ".join(count_parts)}</p>
   </header>
   <div class="card-grid">
 {cards}
   </div>
 </section>''')
     return "\n".join(sections)
+
+
+WARNING_LABELS = {
+    "alternative_award_type_not_summed": "Alternative award type; shown separately and not summed.",
+    "compute_access_not_cash": "Compute access, not cash.",
+    "contingent_prize_not_program_pool": "Contingent prize; not a program pool.",
+    "historical_cumulative_total_excluded": "Historical cumulative totals are excluded from current totals.",
+    "in_kind_components_unquantified": "In-kind components are unquantified.",
+    "per_award_ceiling_not_program_pool": "Per-award ceiling; not a program pool.",
+    "per_award_prize_not_program_pool": "Per-recipient prize; not a program pool.",
+    "per_award_range_not_program_pool": "Per-award range; not a program pool.",
+    "prize_envelope_not_grant_pool": "Prize envelope; not a grant pool.",
+    "provider_specific_credit_not_fungible": "Provider-specific credit; not fungible with other providers.",
+    "service_credit_not_cash": "Service credit, not cash.",
+}
+
+SCOPE_LABELS = {
+    "us_sponsor": "U.S. sponsor current record",
+    "all_only": "International or non-U.S.-sponsor record; visible in All Opportunities only",
+}
+
+ACCOUNTING_LABELS = {
+    "program_pool": "Program pool",
+    "per_award": "Per-award amount",
+    "credit": "Provider service credit",
+    "compute": "Compute access",
+    "facility": "Facility access",
+    "prize": "Prize",
+    "fellowship": "Fellowship",
+    "other_in_kind": "Other in-kind support",
+}
+
+MEASURE_LABELS = {
+    "annual-credit-usd": "Annual credit range",
+    "conference-cap-usd": "Conference grant cap",
+    "credit-ceiling-usd": "Credit ceiling",
+    "grand-prize-eur": "Grand prize",
+    "per-project-usd": "Per-project award range",
+    "program-pool-usd": "Round budget",
+    "typical-qpu-hours": "Typical QPU-hours allocation",
+    "workshop-cap-usd": "Workshop grant cap",
+}
+
+
+def fallback_public_label(value: str | None) -> str:
+    if not value:
+        return "Official measure"
+    cleaned = re.sub(r"-(usd|eur|gbp)$", "", value)
+    return cleaned.replace("-", " ").replace("_", " ").capitalize()
+
+
+def pulse_amount_text(measure: dict | None, entry: dict) -> str:
+    amount = (measure or {}).get("amount") or {}
+    return amount.get("display") or "Official amount not quantified"
+
+
+def pulse_period_text(measure: dict | None, entry: dict) -> str:
+    period = (measure or {}).get("period") or entry.get("period") or {}
+    return period.get("display") or "Not stated"
+
+
+def pulse_record_measure(data: dict, record_id: str, measure_id: str) -> tuple[dict | None, dict | None]:
+    record = next((item for item in data["opportunities"] if item["id"] == record_id), None)
+    if not record:
+        return None, None
+    measure = next((item for item in record.get("resources", {}).get("measures", []) if item["measure_id"] == measure_id), None)
+    return record, measure
+
+
+def pulse_measure_label(measure: dict | None) -> str:
+    if not measure:
+        return "Official measure"
+    suffix = measure["measure_id"].split(":")[-1]
+    return MEASURE_LABELS.get(suffix, fallback_public_label(suffix))
+
+
+def pulse_warning_text(measure: dict | None, entry: dict) -> str:
+    warnings = (measure or {}).get("warnings") or []
+    if warnings:
+        return " ".join(WARNING_LABELS.get(item, fallback_public_label(item)) for item in warnings)
+    return "Aggregated only with matching resource kind, unit, basis, period, and current status."
+
+
+def pulse_entry_cards(data: dict, entry: dict) -> str:
+    cards = []
+    references = entry.get("records") or [{"id": None, "measure_id": None}]
+    for reference in references:
+        record, measure = pulse_record_measure(data, reference.get("id"), reference.get("measure_id"))
+        title = entry["label"]
+        if record and measure:
+            title = f'{record["provider"]} — {record["program"]}'
+        unit = ((measure or {}).get("unit") or entry.get("unit") or {}).get("native_label", "")
+        scope = SCOPE_LABELS.get(entry.get("scope"), fallback_public_label(entry.get("scope")))
+        accounting = ACCOUNTING_LABELS.get(entry.get("accounting_bucket"), fallback_public_label(entry.get("accounting_bucket")))
+        cards.append(f'''<div class="pulse-entry">
+  <h4>{esc(title)}</h4>
+  <dl>
+    <dt>Measure</dt><dd>{esc(pulse_measure_label(measure))}</dd>
+    <dt>Amount</dt><dd>{esc(pulse_amount_text(measure, entry))}</dd>
+    <dt>Period</dt><dd>{esc(pulse_period_text(measure, entry))}</dd>
+    <dt>Unit</dt><dd>{esc(unit)}</dd>
+    <dt>Scope</dt><dd>{esc(scope)}</dd>
+    <dt>Accounting</dt><dd>{esc(accounting)}</dd>
+    <dt>Caveat</dt><dd>{esc(pulse_warning_text(measure, entry))}</dd>
+  </dl>
+</div>''')
+    return "\n".join(cards)
+
+
+def funding_pulse_html(pulse: dict | None, data: dict | None = None) -> str:
+    if not pulse:
+        return '''<section class="funding-pulse" id="funding-pulse" aria-labelledby="funding-pulse-heading">
+  <h2 id="funding-pulse-heading">Funding Pulse</h2>
+  <p>Funding Pulse is unavailable for this legacy snapshot; the snapshot predates structured resources and full-universe relevance classification.</p>
+</section>'''
+    coverage = pulse["coverage"]
+    categories = []
+    for label, key in (
+        ("Official program pools", "program_pools"),
+        ("Per-award ranges", "per_award_ranges"),
+        ("Provider-specific credits", "credits"),
+        ("Compute and facility", "compute_facility"),
+        ("Prizes and fellowships", "prizes_fellowships"),
+        ("Other in-kind", "other_in_kind"),
+    ):
+        entries = pulse.get(key, [])
+        if entries:
+            details = "\n".join(pulse_entry_cards(data or {"opportunities": []}, entry) for entry in entries)
+        else:
+            details = '<p class="pulse-empty">No quantified current bucket.</p>'
+        categories.append(f'''<section class="pulse-category">
+  <h3>{esc(label)}</h3>
+  {details}
+</section>''')
+    baseline_warning = ""
+    if not pulse["snapshot_delta"].get("baseline_available"):
+        baseline_warning = (
+            '<p class="retirement"><strong>No comparable Funding Pulse baseline for this legacy snapshot.</strong> '
+            "Previous snapshot has no Funding Pulse sidecar.</p>"
+        )
+    return f'''<section class="funding-pulse" id="funding-pulse" aria-labelledby="funding-pulse-heading">
+  <h2 id="funding-pulse-heading">Funding Pulse</h2>
+  <p>Funding Pulse measures officially quantified resources visible in this maintained database snapshot. It is not an estimate of all funding in existence.</p>
+  <ul class="pulse-counts">
+    <li><strong>{pulse["record_totals"]["total"]}</strong> verified records</li>
+    <li><strong>{pulse["record_totals"]["current"]}</strong> current open/upcoming</li>
+    <li><strong>{coverage["quantified_current_records"]}</strong> Quantified current records</li>
+    <li><strong>{coverage["partially_quantified_current_records"]}</strong> Partially quantified current records</li>
+    <li><strong>{coverage["unquantified_current_records"]}</strong> Unquantified current records</li>
+  </ul>
+  <p class="pulse-note">{esc(coverage["unknown_coverage_note"])}</p>
+  {baseline_warning}
+  <div class="pulse-categories">
+    {"".join(categories)}
+  </div>
+  <ul class="pulse-warnings">
+    {"".join(f"<li>{esc(warning)}</li>" for warning in pulse["warnings"])}
+    <li>Provider/platform-specific credits are shown separately and are not fungible across AWS, DigitalOcean, Microsoft Azure, or any other provider.</li>
+  </ul>
+</section>'''
 
 
 def closing_soon_html(records: list[dict]) -> str:
@@ -628,8 +1292,10 @@ def closing_soon_html(records: list[dict]) -> str:
 
 def render_html(template: str, data: dict, profile_id: str, profile: dict) -> str:
     records = data["opportunities"]
-    counts = data["counts"]
+    default_records = view_records(records, data.get("view_policy", {}).get("default_view", "all"))
+    counts = {"total": len(default_records), **status_counts(default_records)}
     archive = "\n".join(card_html(record, archived=True) for record in records if record["status"] == "closed")
+    pulse = build_funding_pulse(data)
     embedded = json.dumps(data, ensure_ascii=False, separators=(",", ":")).replace("<", "\\u003c")
     replacements = {
         "PROFILE_ID": profile_id,
@@ -646,9 +1312,10 @@ def render_html(template: str, data: dict, profile_id: str, profile: dict) -> st
         "UPCOMING_COUNT": str(counts["upcoming"]),
         "CLOSED_COUNT": str(counts["closed"]),
         "ACTIVE_COUNT": str(counts["open"] + counts["upcoming"]),
-        "CLOSING_SOON": closing_soon_html(records),
+        "CLOSING_SOON": closing_soon_html(default_records),
         "ACTIVE_SECTIONS": active_sections(records),
         "ARCHIVE_CARDS": archive,
+        "FUNDING_PULSE": funding_pulse_html(pulse, data),
         "DATASET_JSON": embedded,
         "EVIDENCE_POLICY": esc(data["methodology"]["evidence_policy"]),
         "ENDPOINT_RULE": esc(data["methodology"]["endpoint_rule"]),
@@ -674,6 +1341,7 @@ def manifest_for(
     profiles_bytes: bytes,
     html_bytes: bytes,
     history_outputs: dict[str, str],
+    funding_pulse_bytes: bytes | None = None,
 ) -> dict:
     """Create deterministic, repository-relative provenance without machine details."""
     return {
@@ -705,6 +1373,7 @@ def manifest_for(
         "outputs": {
             "index.html": sha256_bytes(html_bytes),
             "public_opportunities.json": sha256_bytes(data_bytes),
+            **({"funding_pulse.json": sha256_bytes(funding_pulse_bytes)} if funding_pulse_bytes else {}),
             **history_outputs,
         },
     }
@@ -740,6 +1409,11 @@ def build(data_path: Path, schema_path: Path, profiles_path: Path, template_path
         profile_dir.mkdir(parents=True, exist_ok=True)
         html_bytes = render_html(template, data, profile_id, profile).encode("utf-8")
         history_outputs = copy_history_artifacts(profile_dir, history_dir, history_index)
+        funding_pulse_bytes = None
+        latest_pulse_path = history_dir / "snapshots" / latest["snapshot_id"] / "funding_pulse.json"
+        if latest_pulse_path.exists():
+            funding_pulse_bytes = latest_pulse_path.read_bytes()
+            (profile_dir / "funding_pulse.json").write_bytes(funding_pulse_bytes)
         manifest = manifest_for(
             data=data,
             profile_id=profile_id,
@@ -751,6 +1425,7 @@ def build(data_path: Path, schema_path: Path, profiles_path: Path, template_path
             profiles_bytes=profiles_bytes,
             html_bytes=html_bytes,
             history_outputs=history_outputs,
+            funding_pulse_bytes=funding_pulse_bytes,
         )
         (profile_dir / "index.html").write_bytes(html_bytes)
         (profile_dir / "public_opportunities.json").write_bytes(data_bytes)

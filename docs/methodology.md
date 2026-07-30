@@ -2,17 +2,17 @@
 
 ## Snapshot interpretation
 
-This tracker is a dated research aid, not a live eligibility or availability service. The current public dataset records facts reviewed for 2026-07-29 in `America/Los_Angeles`; its collection-level verification timestamp is 2026-07-30T01:16:56Z. The configured Pacific date did not roll over, so `page_date` remains 2026-07-29. Publication or rebuilding does not advance those dates.
+This tracker is a dated research aid, not a live eligibility or availability service. The current public dataset records facts reviewed for 2026-07-30 in `America/Los_Angeles`; its collection-level verification timestamp is 2026-07-30T06:15:00Z. Publication or rebuilding does not advance those dates.
 
-The current snapshot has 48 records:
+The current snapshot has 70 records:
 
 | Tracker state | Records |
 |---|---:|
-| Actionable open | 32 |
-| Actionable upcoming | 1 |
-| Archived | 15 |
+| Open | 50 |
+| Upcoming | 3 |
+| Archived | 17 |
 
-The three public groups contain 13 credit programs, 19 HPC/GPU programs, and 16 grant programs.
+The default `Curated for Jason` view has 54 records: 38 open, 1 upcoming, and 15 archived. `All Opportunities` has all 70 verified records from documented scans, including 16 all-only unrelated records. All does not claim internet-wide exhaustiveness.
 
 The public archive is append-only by stable ID. A published ID is not removed merely because a call is retired; the record remains visible, stays `status=closed`, and carries lifecycle metadata explaining the retirement or reactivation state. Historical snapshots are immutable JSON artifacts and are selected client-side from same-origin `/scientific-resources/snapshots/...` paths.
 
@@ -20,7 +20,13 @@ The public archive is append-only by stable ID. A published ID is not removed me
 
 Only provider, agency, facility, foundation, or provider-linked application pages are accepted as evidence. Aggregators and secondhand lists are not evidence for a status decision. Every record keeps at least one public official-source URL and a dated verification value.
 
-The canonical dataset preserves 93 official-source URL entries. Thirty-one records have an application URL; all 31 are actionable open records in this snapshot. Application controls are omitted for upcoming and archived records, even when an archived record’s official form remains live.
+Every record keeps at least one public official-source URL and a dated verification value. Application controls are omitted for upcoming and archived records, even when an archived record’s official form remains live.
+
+## Views and relevance
+
+`data/opportunities.json` is one canonical database. Curated and All are views over that database, not separate trackers. Every `1.1.0` record has a public-safe `relevance` object with classification `direct`, `adjacent`, or `unrelated`. Curated includes only direct and adjacent records; unrelated records remain visible in All and do not carry private Jason-specific rationale.
+
+Every `1.1.0` record also has `landscape` fields distinguishing U.S. sponsor country from applicant availability. U.S.-only Funding Pulse aggregates include only records whose `landscape.sponsor_country` is `US`; international and multinational programs remain visible in All.
 
 ## Status definitions
 
@@ -51,7 +57,15 @@ Page availability, sponsor intake and tracker actionability are checked separate
 
 ## Public data boundary
 
-`data/opportunities.json` contains only the fields declared by `data/schema.json`: stable public identity, provider and grouping, tracker state, resource and deadline descriptions, generic eligibility, endpoint note, public application and official-source URLs, verification dates, and lifecycle fields. Both hosts use this exact object after it has been recorded as the latest reviewed history snapshot.
+`data/opportunities.json` contains only the fields declared by `data/schema.json`: stable public identity, provider and grouping, tracker state, resource and deadline descriptions, generic eligibility, endpoint note, public application and official-source URLs, verification dates, lifecycle fields, public-safe relevance, landscape facets, and structured resource facts. Both hosts use this exact object after it has been recorded as the latest reviewed history snapshot.
+
+## Funding Pulse
+
+Funding Pulse measures officially quantified resources visible in the maintained database snapshot. It is not an estimate of all funding in existence. Aggregation uses only `resources.measures[]`; the human-facing `amount` string is display text and is never parsed.
+
+Program pools, per-award ranges, credits, compute/facility allocations, fellowships/prizes, and in-kind support are separate. Per-award ceilings are not multiplied by guessed award counts. Alternative award caps within one program, such as conference versus workshop caps, remain separate rows and are not summed. Currencies are not converted or summed across currencies without a dated official conversion source. Credits are not cash, and provider/platform-specific service credits are not fungible with one another merely because they are USD-denominated. Compute/facility units are not monetized. Closed records remain in archive/history coverage but do not contribute to current available-resource buckets.
+
+Each new `1.1.0` snapshot stores `funding_pulse.json` beside `public_opportunities.json` and `change_manifest.json`; the host root `funding_pulse.json` is byte-identical to the latest snapshot sidecar. Legacy `1.0.0` snapshots have an explicit pulse-unavailable state rather than retroactive reconstruction. When a new pulse is compared against a legacy snapshot, `baseline_available=false` and `baseline_reason=previous_snapshot_has_no_funding_pulse` are recorded and displayed.
 
 ## Limitations
 

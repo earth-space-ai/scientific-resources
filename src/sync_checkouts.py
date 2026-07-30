@@ -19,7 +19,7 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DIST_ROOT = PROJECT_ROOT / "dist"
-ROOT_FILE_NAMES = ("index.html", "public_opportunities.json", "provenance.json")
+ROOT_FILE_NAMES = ("index.html", "public_opportunities.json", "funding_pulse.json", "provenance.json")
 DESTINATION_DIRS = {
     "primary": Path("public/scientific-resources"),
     "mirror": Path("scientific-resources"),

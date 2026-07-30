@@ -10,11 +10,11 @@ The inspected primary route normalizes its canonical and social URL to the slash
 
 ## Snapshot scope
 
-The canonical public dataset is a reviewed snapshot dated **2026-07-29** (`America/Los_Angeles`), with collection verification timestamp **2026-07-30T01:16:56Z**. The configured Pacific date did not roll over. The dataset contains 48 public records: 32 actionable open, 1 actionable upcoming, and 15 archived. These are preserved snapshot facts, not a claim that the same statuses remain current today.
+The canonical public dataset is a reviewed snapshot dated **2026-07-30** (`America/Los_Angeles`), with collection verification timestamp **2026-07-30T06:15:00Z**. The dataset contains 70 public records: 50 open, 3 upcoming, and 17 archived. The default `Curated for Jason` view contains 54 records; `All Opportunities` contains the complete verified database from documented scans, not an internet-wide exhaustive list.
 
 A specific modeled cycle with an officially verified fixed applicant deadline on or before `page_date + 15 calendar days` is moved out of the actionable view. The boundary is inclusive and group-neutral. Policy archival is not a claim that the sponsor closed intake: the record preserves its official deadline and sources, removes its apply control, and shows a public `retirement_reason`. A continuously open program with recurring cutoffs advances to the next verified cutoff outside the fence rather than closing the whole program; a multi-element umbrella has no single fixed deadline.
 
-`data/opportunities.json` is the sole canonical current opportunity data file. Every stable ID remains present after publication; retirement is represented with lifecycle fields, not by deleting the record. Each current record carries `first_seen`, `last_verified`, `retired_at`, `retirement_reason`, `superseded_by`, and `reactivated_at`. The exact original 32-record dataset is preserved as the first immutable history snapshot at `data/history/snapshots/2026-07-28-a5af1ed92d34/`.
+`data/opportunities.json` is the sole canonical current opportunity data file. Every current record carries public-safe relevance, U.S.-landscape facets, structured resource facts, and lifecycle fields. Curated membership is derived from `relevance.classification in {"direct", "adjacent"}`; unrelated verified records remain visible in All only. The exact original 32-record dataset is preserved as the first immutable history snapshot at `data/history/snapshots/2026-07-28-a5af1ed92d34/`; old `1.0.0` snapshots are not backfilled.
 
 ## Build
 
@@ -30,25 +30,29 @@ The production build writes the current data, provenance, and immutable history 
 dist/primary/index.html
 dist/primary/public_opportunities.json
 dist/primary/provenance.json
+dist/primary/funding_pulse.json
 dist/primary/snapshots/index.json
 dist/primary/snapshots/<snapshot-id>/public_opportunities.json
 dist/primary/snapshots/<snapshot-id>/change_manifest.json
+dist/primary/snapshots/<snapshot-id>/funding_pulse.json
 dist/mirror/index.html
 dist/mirror/public_opportunities.json
 dist/mirror/provenance.json
+dist/mirror/funding_pulse.json
 dist/mirror/snapshots/index.json
 dist/mirror/snapshots/<snapshot-id>/public_opportunities.json
 dist/mirror/snapshots/<snapshot-id>/change_manifest.json
+dist/mirror/snapshots/<snapshot-id>/funding_pulse.json
 ```
 
 The generator refuses production output unless `data/opportunities.json` byte-matches the latest entry in `data/history/index.json`. This protects publication from unrecorded current-data edits. After reviewed candidate-data edits for the next snapshot, append history first:
 
 ```sh
-python3 src/record_snapshot.py --expected-page-date 2026-07-29
+python3 src/record_snapshot.py --expected-page-date 2026-07-30
 python3 src/generate.py
 ```
 
-The standalone current JSON files are byte-identical to the latest recorded snapshot. The HTML files embed that same object and load historical JSON only from same-origin root-relative `/scientific-resources/snapshots/...` paths. Host-specific differences are limited to canonical, alternate, social metadata, and visible primary/mirror navigation. Each provenance manifest contains only repository-relative input names, public host metadata, counts, and SHA-256 digests, including history artifacts.
+The standalone current JSON files are byte-identical to the latest recorded snapshot. `funding_pulse.json` at each host root is byte-identical to the latest snapshot sidecar. The HTML files embed the canonical object and load historical JSON only from same-origin root-relative `/scientific-resources/snapshots/...` paths. Host-specific differences are limited to canonical, alternate, social metadata, and visible primary/mirror navigation.
 
 ## Validate
 
@@ -56,7 +60,7 @@ The standalone current JSON files are byte-identical to the latest recorded snap
 python3 -m unittest discover -s tests -v
 ```
 
-The standard-library test suite validates the public schema, original baseline hash and source commit, the inclusive 15-day archive boundary, recurring and umbrella exceptions, lifecycle and repeated-reactivation invariants, recorder refusal paths, manifest transition logic, current/latest parity refusal, record and status counts, URL rules, public-field allowlist, privacy gates, embedded/standalone parity, server/browser archive rendering, exact host metadata and root-relative resource paths, self-contained assets, provenance digests, and safe two-checkout synchronization.
+The standard-library test suite validates the public schema, original baseline hash and source commit, the inclusive 15-day archive boundary, lifecycle invariants, recorder refusal paths, relevance/view counts, structured resource source custody, Funding Pulse display/accounting guardrails, current/latest parity refusal, URL rules, privacy gates, embedded/standalone parity, exact host metadata and root-relative paths, provenance digests, and safe two-checkout synchronization.
 
 ## Owner-controlled checkout synchronization
 
@@ -68,7 +72,7 @@ python3 src/sync_checkouts.py \
   --mirror-checkout /path/to/mirror-checkout
 ```
 
-After reviewing the plan, the owner may add `--apply`. The helper copies only the exact generated files under each `dist/<profile>/` root: `index.html`, `public_opportunities.json`, `provenance.json`, and `snapshots/...`. It rejects a dirty pre-state, never deletes files, never edits `next.config.mjs`, and succeeds only after Git-status confinement plus byte/SHA-256 parity checks.
+After reviewing the plan, the owner may add `--apply`. The helper copies only the exact generated files under each `dist/<profile>/` root: `index.html`, `public_opportunities.json`, `funding_pulse.json`, `provenance.json`, and `snapshots/...`. It rejects a dirty pre-state, never deletes files, never edits `next.config.mjs`, and succeeds only after Git-status confinement plus byte/SHA-256 parity checks.
 
 The primary application's one-time exact Next.js rewrite is a separate owner-reviewed and committed host change. Subsequent releases use that committed rewrite plus this helper; the helper does not create or alter the rewrite.
 

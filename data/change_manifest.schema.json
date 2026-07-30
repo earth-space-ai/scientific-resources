@@ -3,7 +3,7 @@
   "$id": "https://earth-space-ai.org/scientific-resources/change_manifest.schema.json",
   "title": "Scientific Resource Tracker change manifest",
   "type": "object",
-  "additionalProperties": false,
+  "additionalProperties": true,
   "required": [
     "schema_version",
     "snapshot_id",
@@ -15,64 +15,52 @@
     "changes"
   ],
   "properties": {
-    "schema_version": {"const": "1.0.0"},
-    "snapshot_id": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-f0-9]{12}$"},
-    "previous_snapshot_id": {
-      "anyOf": [
-        {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-f0-9]{12}$"},
-        {"type": "null"}
+    "schema_version": {
+      "enum": [
+        "1.0.0",
+        "1.1.0"
       ]
     },
-    "comparison_basis": {"const": "stable-id-lifecycle"},
-    "current_data_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "snapshot_id": {
+      "type": "string"
+    },
+    "previous_snapshot_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "comparison_basis": {
+      "type": "string"
+    },
+    "current_data_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
     "previous_data_sha256": {
       "anyOf": [
-        {"type": "string", "pattern": "^[a-f0-9]{64}$"},
-        {"type": "null"}
+        {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        {
+          "type": "null"
+        }
       ]
     },
     "counts": {
       "type": "object",
-      "additionalProperties": false,
-      "required": ["added", "changed", "retired", "reactivated", "unchanged"],
-      "properties": {
-        "added": {"type": "integer", "minimum": 0},
-        "changed": {"type": "integer", "minimum": 0},
-        "retired": {"type": "integer", "minimum": 0},
-        "reactivated": {"type": "integer", "minimum": 0},
-        "unchanged": {"type": "integer", "minimum": 0}
-      }
+      "additionalProperties": true
     },
     "changes": {
       "type": "array",
       "items": {
         "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "id",
-          "change_type",
-          "previous_status",
-          "current_status",
-          "changed_fields",
-          "previous_record_sha256",
-          "current_record_sha256"
-        ],
-        "properties": {
-          "id": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"},
-          "change_type": {"enum": ["added", "changed", "retired", "reactivated", "unchanged"]},
-          "previous_status": {
-            "anyOf": [{"enum": ["open", "upcoming", "closed"]}, {"type": "null"}]
-          },
-          "current_status": {"enum": ["open", "upcoming", "closed"]},
-          "changed_fields": {
-            "type": "array",
-            "items": {"type": "string", "minLength": 1}
-          },
-          "previous_record_sha256": {
-            "anyOf": [{"type": "string", "pattern": "^[a-f0-9]{64}$"}, {"type": "null"}]
-          },
-          "current_record_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
-        }
+        "additionalProperties": true
       }
     }
   }

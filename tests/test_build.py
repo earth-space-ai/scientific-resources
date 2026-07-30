@@ -38,12 +38,16 @@ class BuildParityTests(unittest.TestCase):
         return parser
 
     def test_expected_artifacts_exist(self):
-        expected_names = {"index.html", "public_opportunities.json", "provenance.json"}
+        expected_names = {"index.html", "public_opportunities.json", "funding_pulse.json", "provenance.json"}
         for profile in EXPECTED_URLS:
             profile_dir = DIST / profile
             self.assertTrue(profile_dir.is_dir())
             self.assertEqual({path.name for path in profile_dir.iterdir() if path.is_file()}, expected_names)
             self.assertTrue((profile_dir / "snapshots" / "index.json").is_file())
+            self.assertEqual(
+                (profile_dir / "funding_pulse.json").read_bytes(),
+                (HISTORY / "snapshots" / self.current_snapshot_id / "funding_pulse.json").read_bytes(),
+            )
 
     def test_both_standalone_datasets_equal_canonical_bytes(self):
         canonical = self.current_snapshot_path.read_bytes()
@@ -102,7 +106,7 @@ class BuildParityTests(unittest.TestCase):
         for profile in EXPECTED_URLS:
             profile_dir = DIST / profile
             manifest = load_json(profile_dir / "provenance.json")
-            self.assertEqual(manifest["manifest_version"], "1.0.0")
+            self.assertEqual(manifest["manifest_version"], "1.1.0")
             self.assertEqual(manifest["snapshot_date"], self.current_snapshot["page_date"])
             self.assertEqual(manifest["profile"]["id"], profile)
             self.assertEqual(manifest["profile"]["canonical_url"], EXPECTED_URLS[profile])

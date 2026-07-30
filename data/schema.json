@@ -2,7 +2,6 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://earth-space-ai.org/scientific-resources/schema.json",
   "title": "Scientific Resource Tracker public dataset",
-  "description": "Schema for the reviewed public opportunity snapshot used by both host profiles.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -13,6 +12,9 @@
     "verified_at",
     "methodology",
     "counts",
+    "view_policy",
+    "view_counts",
+    "relevance_counts",
     "opportunities"
   ],
   "properties": {
@@ -20,7 +22,7 @@
       "const": "Scientific Resource Tracker"
     },
     "schema_version": {
-      "const": "1.0.0"
+      "const": "1.1.0"
     },
     "page_date": {
       "type": "string",
@@ -108,221 +110,750 @@
         }
       }
     },
+    "view_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "default_view",
+        "curated_classes",
+        "all_scope_label"
+      ],
+      "properties": {
+        "default_view": {
+          "const": "curated"
+        },
+        "curated_classes": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "direct",
+              "adjacent"
+            ]
+          }
+        },
+        "all_scope_label": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "view_counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "curated",
+        "all"
+      ],
+      "properties": {
+        "curated": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "total",
+            "open",
+            "upcoming",
+            "closed"
+          ],
+          "properties": {
+            "total": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "open": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "upcoming": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "closed": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "all": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "total",
+            "open",
+            "upcoming",
+            "closed"
+          ],
+          "properties": {
+            "total": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "open": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "upcoming": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "closed": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    "relevance_counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "direct",
+        "adjacent",
+        "unrelated"
+      ],
+      "properties": {
+        "direct": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "adjacent": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unrelated": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
     "opportunities": {
       "type": "array",
       "minItems": 1,
       "uniqueItems": true,
       "items": {
-        "$ref": "#/$defs/opportunity"
-      }
-    }
-  },
-  "$defs": {
-    "opportunity": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "id",
-        "program",
-        "provider",
-        "group",
-        "group_label",
-        "status",
-        "amount",
-        "deadline",
-        "next_deadline",
-        "deadline_kind",
-        "closing_soon",
-        "eligibility",
-        "endpoint_note",
-        "application_url",
-        "apply_label",
-        "official_source_urls",
-        "verified_at",
-        "verified_date",
-        "first_seen",
-        "last_verified",
-        "retired_at",
-        "retirement_reason",
-        "superseded_by",
-        "reactivated_at"
-      ],
-      "properties": {
-        "id": {
-          "type": "string",
-          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
-        },
-        "program": {
-          "type": "string",
-          "minLength": 1
-        },
-        "provider": {
-          "type": "string",
-          "minLength": 1
-        },
-        "group": {
-          "enum": [
-            "credits",
-            "hpc",
-            "grants"
-          ]
-        },
-        "group_label": {
-          "enum": [
-            "API & cloud research credits",
-            "HPC & GPU allocations",
-            "AI-for-science & open-science grants"
-          ]
-        },
-        "status": {
-          "description": "Tracker actionability state. closed renders as Archived and may mean sponsor closure, a past cycle, or an explicit lead-time-policy retirement documented by retirement_reason.",
-          "enum": [
-            "open",
-            "upcoming",
-            "closed"
-          ]
-        },
-        "amount": {
-          "type": "string",
-          "minLength": 1
-        },
-        "deadline": {
-          "type": "string",
-          "minLength": 1
-        },
-        "next_deadline": {
-          "description": "Machine-readable applicant deadline or next relevant cutoff. An archived record may retain a future official date; a recurring program advances to the next still-actionable cutoff.",
-          "anyOf": [
-            {
-              "type": "string",
-              "format": "date"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "deadline_kind": {
-          "description": "Tracker deadline model. closed is synchronized with archived status and may retain a future next_deadline when retirement is policy-driven.",
-          "enum": [
-            "rolling",
-            "fixed",
-            "closed",
-            "tbd"
-          ]
-        },
-        "closing_soon": {
-          "description": "Legacy 10-day presentation flag for actionable open records; it is false for every archived record and remains distinct from the 15-day archive gate.",
-          "type": "boolean"
-        },
-        "eligibility": {
-          "type": "string",
-          "minLength": 1
-        },
-        "endpoint_note": {
-          "type": "string",
-          "minLength": 1
-        },
-        "application_url": {
-          "anyOf": [
-            {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "program",
+          "provider",
+          "group",
+          "group_label",
+          "status",
+          "amount",
+          "deadline",
+          "next_deadline",
+          "deadline_kind",
+          "closing_soon",
+          "eligibility",
+          "endpoint_note",
+          "application_url",
+          "apply_label",
+          "official_source_urls",
+          "verified_at",
+          "verified_date",
+          "first_seen",
+          "last_verified",
+          "retired_at",
+          "retirement_reason",
+          "superseded_by",
+          "reactivated_at",
+          "relevance",
+          "landscape",
+          "resources"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+          },
+          "program": {
+            "type": "string",
+            "minLength": 1
+          },
+          "provider": {
+            "type": "string",
+            "minLength": 1
+          },
+          "group": {
+            "enum": [
+              "credits",
+              "hpc",
+              "grants"
+            ]
+          },
+          "group_label": {
+            "enum": [
+              "API & cloud research credits",
+              "HPC & GPU allocations",
+              "AI-for-science & open-science grants"
+            ]
+          },
+          "status": {
+            "enum": [
+              "open",
+              "upcoming",
+              "closed"
+            ]
+          },
+          "amount": {
+            "type": "string",
+            "minLength": 1
+          },
+          "deadline": {
+            "type": "string",
+            "minLength": 1
+          },
+          "next_deadline": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "deadline_kind": {
+            "enum": [
+              "rolling",
+              "fixed",
+              "closed",
+              "tbd"
+            ]
+          },
+          "closing_soon": {
+            "type": "boolean"
+          },
+          "eligibility": {
+            "type": "string",
+            "minLength": 1
+          },
+          "endpoint_note": {
+            "type": "string",
+            "minLength": 1
+          },
+          "application_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uri",
+                "pattern": "^https://"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "apply_label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "official_source_urls": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
               "type": "string",
               "format": "uri",
               "pattern": "^https://"
-            },
-            {
-              "type": "null"
             }
-          ]
-        },
-        "apply_label": {
-          "anyOf": [
-            {
-              "type": "string",
-              "minLength": 1
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "official_source_urls": {
-          "type": "array",
-          "minItems": 1,
-          "uniqueItems": true,
-          "items": {
+          },
+          "verified_at": {
             "type": "string",
-            "format": "uri",
-            "pattern": "^https://"
-          }
-        },
-        "verified_at": {
-          "type": "string",
-          "format": "date-time"
-        },
-        "verified_date": {
-          "type": "string",
-          "format": "date"
-        },
-        "first_seen": {
-          "type": "string",
-          "format": "date"
-        },
-        "last_verified": {
-          "type": "string",
-          "format": "date"
-        },
-        "retired_at": {
-          "description": "Review date when this stable ID moved into the tracker archive. A non-null value drives a retired manifest event and requires archived status plus a visible reason.",
-          "anyOf": [
-            {
-              "type": "string",
-              "format": "date"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "retirement_reason": {
-          "description": "Public human-readable reason that distinguishes sponsor closure, past-cycle retirement, and tracker lead-time archival while preserving the official deadline truth.",
-          "anyOf": [
-            {
-              "type": "string",
-              "minLength": 1
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "superseded_by": {
-          "anyOf": [
-            {
-              "type": "array",
-              "minItems": 1,
-              "uniqueItems": true,
-              "items": {
+            "format": "date-time"
+          },
+          "verified_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "first_seen": {
+            "type": "string",
+            "format": "date"
+          },
+          "last_verified": {
+            "type": "string",
+            "format": "date"
+          },
+          "retired_at": {
+            "anyOf": [
+              {
                 "type": "string",
-                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+                "format": "date"
+              },
+              {
+                "type": "null"
               }
-            },
-            {
-              "type": "null"
+            ]
+          },
+          "retirement_reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "superseded_by": {
+            "anyOf": [
+              {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reactivated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "relevance": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "classification",
+              "public_reason",
+              "signals",
+              "assessed_at",
+              "assessed_by"
+            ],
+            "properties": {
+              "classification": {
+                "enum": [
+                  "direct",
+                  "adjacent",
+                  "unrelated"
+                ]
+              },
+              "public_reason": {
+                "type": "string",
+                "minLength": 1
+              },
+              "signals": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+                }
+              },
+              "assessed_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "assessed_by": {
+                "const": "researchassistant"
+              }
             }
-          ]
-        },
-        "reactivated_at": {
-          "description": "Most recent review date when a previously archived stable ID returned to the actionable set. The value is preserved through a later retirement; immutable snapshots retain every event.",
-          "anyOf": [
-            {
-              "type": "string",
-              "format": "date"
-            },
-            {
-              "type": "null"
+          },
+          "landscape": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "sponsor_sector",
+              "sponsor_country",
+              "applicant_geographies",
+              "recipient_types",
+              "science_domains"
+            ],
+            "properties": {
+              "sponsor_sector": {
+                "enum": [
+                  "us_federal",
+                  "us_state_local",
+                  "foundation_nonprofit",
+                  "industry",
+                  "university_consortium",
+                  "international_public",
+                  "other"
+                ]
+              },
+              "sponsor_country": {
+                "type": "string",
+                "pattern": "^[A-Z]{2}$|^MULTINATIONAL$|^UNKNOWN$"
+              },
+              "applicant_geographies": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "recipient_types": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "science_domains": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
             }
-          ]
+          },
+          "resources": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "quantification_status",
+              "confidence",
+              "reason",
+              "effective_date",
+              "source_refs",
+              "relationship",
+              "measures"
+            ],
+            "properties": {
+              "quantification_status": {
+                "enum": [
+                  "quantified",
+                  "partially_quantified",
+                  "unquantified",
+                  "individualized"
+                ]
+              },
+              "confidence": {
+                "enum": [
+                  "official_explicit",
+                  "official_partial",
+                  "unresolved"
+                ]
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1
+              },
+              "effective_date": {
+                "type": "string",
+                "format": "date"
+              },
+              "source_refs": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "url",
+                    "evidence_type",
+                    "retrieved_at"
+                  ],
+                  "properties": {
+                    "url": {
+                      "type": "string",
+                      "format": "uri",
+                      "pattern": "^https://"
+                    },
+                    "evidence_type": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "retrieved_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              },
+              "relationship": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "parent_id",
+                  "rollup_policy"
+                ],
+                "properties": {
+                  "parent_id": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "rollup_policy": {
+                    "enum": [
+                      "self",
+                      "parent_only",
+                      "child_only",
+                      "exclude"
+                    ]
+                  }
+                }
+              },
+              "measures": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "measure_id",
+                    "resource_kind",
+                    "accounting_bucket",
+                    "basis",
+                    "status_scope",
+                    "amount",
+                    "unit",
+                    "period",
+                    "source_refs",
+                    "aggregation",
+                    "warnings"
+                  ],
+                  "properties": {
+                    "measure_id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "resource_kind": {
+                      "enum": [
+                        "cash",
+                        "cloud_credit",
+                        "api_credit",
+                        "compute_access",
+                        "facility_access",
+                        "fellowship",
+                        "prize",
+                        "other_in_kind"
+                      ]
+                    },
+                    "accounting_bucket": {
+                      "enum": [
+                        "program_pool",
+                        "per_award",
+                        "cash",
+                        "credit",
+                        "compute",
+                        "facility",
+                        "prize",
+                        "fellowship",
+                        "other_in_kind"
+                      ]
+                    },
+                    "basis": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "status_scope": {
+                      "enum": [
+                        "current_only",
+                        "archive_only",
+                        "current_and_archive"
+                      ]
+                    },
+                    "amount": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "minimum",
+                        "maximum",
+                        "exact",
+                        "display"
+                      ],
+                      "properties": {
+                        "minimum": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "maximum": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "exact": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "display": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      }
+                    },
+                    "unit": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "kind",
+                        "code",
+                        "native_label"
+                      ],
+                      "properties": {
+                        "kind": {
+                          "enum": [
+                            "currency",
+                            "credit_currency",
+                            "allocation_credit",
+                            "qpu_hour",
+                            "node_hour",
+                            "service_credit",
+                            "count",
+                            "unknown"
+                          ]
+                        },
+                        "code": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "native_label": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      }
+                    },
+                    "period": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "kind",
+                        "display"
+                      ],
+                      "properties": {
+                        "kind": {
+                          "enum": [
+                            "one_time",
+                            "annual",
+                            "cycle",
+                            "project_duration",
+                            "unknown"
+                          ]
+                        },
+                        "display": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      }
+                    },
+                    "source_refs": {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "url",
+                          "evidence_type",
+                          "retrieved_at"
+                        ],
+                        "properties": {
+                          "url": {
+                            "type": "string",
+                            "format": "uri",
+                            "pattern": "^https://"
+                          },
+                          "evidence_type": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "retrieved_at": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        }
+                      }
+                    },
+                    "aggregation": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "include_in_rollup",
+                        "rollup_group_key",
+                        "double_count_key",
+                        "dedupe_priority"
+                      ],
+                      "properties": {
+                        "include_in_rollup": {
+                          "type": "boolean"
+                        },
+                        "rollup_group_key": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "double_count_key": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "dedupe_priority": {
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    "warnings": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
         }
       }
     }

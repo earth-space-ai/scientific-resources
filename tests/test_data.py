@@ -22,6 +22,10 @@ def declared_counts(records):
     return {"total": len(records), "open": observed["open"], "upcoming": observed["upcoming"], "closed": observed["closed"]}
 
 
+def refresh(data):
+    generate.refresh_derived_counts(data)
+
+
 class SchemaAssertionError(AssertionError):
     pass
 
@@ -220,12 +224,75 @@ class PublicDataTests(unittest.TestCase):
         new_record["program"] = "Example New Resource 2026"
         new_record["first_seen"] = future["page_date"]
         future["opportunities"].append(new_record)
-        future["counts"] = declared_counts(future["opportunities"])
+        refresh(future)
         generate.validate_public_data(future)
 
         future["counts"]["open"] = max(0, future["counts"]["open"] - 1)
         with self.assertRaisesRegex(ValueError, "declared and observed status counts"):
             generate.validate_public_data(future)
+
+    def test_relevance_and_view_counts_are_derived(self):
+        self.assertEqual(self.data["view_policy"]["default_view"], "curated")
+        self.assertEqual(self.data["view_counts"], generate.view_counts(self.records))
+        self.assertEqual(self.data["relevance_counts"], generate.relevance_counts(self.records))
+        self.assertFalse(any(record["relevance"]["classification"] == "unknown" for record in self.records))
+        unrelated = [record for record in self.records if record["relevance"]["classification"] == "unrelated"]
+        self.assertEqual(len(unrelated), 16)
+        reasons = {record["relevance"]["public_reason"] for record in unrelated}
+        self.assertEqual(len(reasons), 16)
+        self.assertFalse(any("Jason" in reason for reason in reasons))
+
+    def test_resource_source_refs_are_official_and_amount_text_is_display_only(self):
+        original = generate.build_funding_pulse(self.data)
+        mutated = json.loads(json.dumps(self.data))
+        mutated["opportunities"][0]["amount"] = "Display text changed; structured measures unchanged."
+        changed = generate.build_funding_pulse(mutated)
+        self.assertEqual(original["program_pools"], changed["program_pools"])
+        for record in self.records:
+            official = set(record["official_source_urls"])
+            for source_ref in record["resources"]["source_refs"]:
+                self.assertIn(source_ref["url"], official)
+            for measure in record["resources"]["measures"]:
+                for source_ref in measure["source_refs"]:
+                    self.assertIn(source_ref["url"], official)
+
+    def test_every_resource_warning_has_public_label(self):
+        warnings = {
+            warning
+            for record in self.records
+            for measure in record["resources"]["measures"]
+            for warning in measure["warnings"]
+        }
+        self.assertEqual(warnings - set(generate.WARNING_LABELS), set())
+        for warning in warnings:
+            label = generate.WARNING_LABELS[warning]
+            self.assertNotIn("_", label)
+            self.assertTrue(label.endswith("."))
+
+    def test_provider_specific_credits_do_not_share_rollup_rows(self):
+        pulse = generate.build_funding_pulse(self.data)
+        labels = [entry["label"] for entry in pulse["credits"]]
+        self.assertIn("provider:DigitalOcean|resource:cloud-credit|basis:annual-per-project|unit:DigitalOcean credits USD", labels)
+        self.assertIn("provider:Microsoft Azure|resource:cloud-credit|basis:annual-per-organization|unit:Azure credits USD", labels)
+        self.assertIn("provider:AWS TechAction|resource:cloud-credit|basis:per-project-ceiling|unit:AWS Promotional Credit USD", labels)
+        self.assertFalse(any(entry["amount"]["maximum_sum"] == 22000 for entry in pulse["credits"]))
+
+        broken = json.loads(json.dumps(self.data))
+        by_id = {record["id"]: record for record in broken["opportunities"]}
+        do_measure = by_id["digitalocean-open-source-sponsorship"]["resources"]["measures"][0]
+        azure_measure = by_id["microsoft-nonprofits-azure-grant"]["resources"]["measures"][0]
+        azure_measure["aggregation"]["rollup_group_key"] = do_measure["aggregation"]["rollup_group_key"]
+        with self.assertRaisesRegex(ValueError, "provider/platform-specific credits"):
+            generate.validate_public_data(broken)
+
+    def test_psf_alternative_caps_remain_separate(self):
+        pulse = generate.build_funding_pulse(self.data)
+        psf_rows = [
+            entry for entry in pulse["per_award_ranges"]
+            if entry["label"].startswith("provider:Python Software Foundation")
+        ]
+        self.assertEqual({entry["amount"]["maximum_sum"] for entry in psf_rows}, {1500.0, 2000.0})
+        self.assertFalse(any(entry["amount"]["maximum_sum"] == 3500 for entry in psf_rows))
 
 
 if __name__ == "__main__":

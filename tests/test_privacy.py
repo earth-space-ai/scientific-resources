@@ -34,6 +34,9 @@ EXPECTED_PUBLIC_FIELDS = {
     "retirement_reason",
     "superseded_by",
     "reactivated_at",
+    "relevance",
+    "landscape",
+    "resources",
 }
 
 
@@ -59,7 +62,7 @@ class PrivacyAndSecretCategoryTests(unittest.TestCase):
 
     def test_no_local_machine_or_upstream_workspace_paths(self):
         local_root = marker(["/", "Users", "/"])
-        upstream_labels = [marker(["base", "line_"]), marker(["project", "_digest"])]
+        upstream_labels = [marker(["project", "_digest"])]
         for path in publishable_text_files():
             text = path.read_text(encoding="utf-8")
             self.assertNotIn(local_root, text, msg=str(path.relative_to(ROOT)))

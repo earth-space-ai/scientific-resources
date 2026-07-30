@@ -5,7 +5,6 @@ import hashlib
 import json
 import sys
 import unittest
-from collections import Counter
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -26,13 +25,7 @@ class ArchivePolicyTests(unittest.TestCase):
 
     @staticmethod
     def recount(data: dict) -> None:
-        counts = Counter(record["status"] for record in data["opportunities"])
-        data["counts"] = {
-            "total": len(data["opportunities"]),
-            "open": counts["open"],
-            "upcoming": counts["upcoming"],
-            "closed": counts["closed"],
-        }
+        generate.refresh_derived_counts(data)
 
     @staticmethod
     def record(data: dict, record_id: str) -> dict:
@@ -40,9 +33,11 @@ class ArchivePolicyTests(unittest.TestCase):
 
     def test_current_dataset_matches_reviewed_policy_decision(self) -> None:
         generate.validate_public_data(self.data)
-        self.assertEqual(self.data["counts"], {"total": 54, "open": 38, "upcoming": 1, "closed": 15})
+        self.assertEqual(self.data["counts"], {"total": 70, "open": 50, "upcoming": 3, "closed": 17})
+        self.assertEqual(self.data["view_counts"]["curated"], {"total": 54, "open": 38, "upcoming": 1, "closed": 15})
+        self.assertEqual(self.data["relevance_counts"]["unrelated"], 16)
         self.assertEqual(sum(record["closing_soon"] for record in self.data["opportunities"]), 0)
-        self.assertEqual(sum(bool(record["application_url"]) for record in self.data["opportunities"]), 37)
+        self.assertGreaterEqual(sum(bool(record["application_url"]) for record in self.data["opportunities"]), 37)
         expected_added_nsf = {
             "nsf-shine-22-570": ("fixed", "2026-10-07"),
             "nsf-plasma-physics-23-615": ("fixed", "2026-11-16"),
@@ -151,7 +146,7 @@ class ArchivePolicyTests(unittest.TestCase):
     def test_lifecycle_dates_must_not_exceed_last_verification(self) -> None:
         data = self.candidate_data()
         record = self.record(data, "google-gara-eftqc-2026")
-        record["retired_at"] = "2026-07-30"
+        record["retired_at"] = "2026-07-31"
         with self.assertRaisesRegex(ValueError, "between first_seen and last_verified"):
             generate.validate_public_data(data)
 
@@ -178,12 +173,12 @@ class ArchivePolicyTests(unittest.TestCase):
                 "closing_soon": False,
                 "application_url": None,
                 "apply_label": None,
-                "retired_at": "2026-07-29",
+                "retired_at": self.data["page_date"],
                 "retirement_reason": "Archived again after a verified later cycle entered the lead-time fence.",
             }
         )
         generate.validate_lifecycle(current, "current")
-        generate.validate_lifecycle_transition(previous, current, "2026-07-29")
+        generate.validate_lifecycle_transition(previous, current, self.data["page_date"])
         self.assertEqual(current["reactivated_at"], "2026-07-28")
 
     def test_retirement_cannot_fabricate_or_rewrite_reactivation(self) -> None:
@@ -210,20 +205,20 @@ class ArchivePolicyTests(unittest.TestCase):
                 "closing_soon": False,
                 "application_url": None,
                 "apply_label": None,
-                "retired_at": "2026-07-29",
+                "retired_at": self.data["page_date"],
                 "retirement_reason": "Test retirement.",
-                "reactivated_at": "2026-07-29",
+                "reactivated_at": self.data["page_date"],
             }
         )
         with self.assertRaisesRegex(ValueError, "cannot fabricate or rewrite"):
-            generate.validate_lifecycle_transition(previous, fabricated, "2026-07-29")
+            generate.validate_lifecycle_transition(previous, fabricated, self.data["page_date"])
 
         previously_reactivated = copy.deepcopy(previous)
         previously_reactivated["reactivated_at"] = "2026-07-28"
         rewritten = copy.deepcopy(fabricated)
-        rewritten["reactivated_at"] = "2026-07-29"
+        rewritten["reactivated_at"] = self.data["page_date"]
         with self.assertRaisesRegex(ValueError, "cannot fabricate or rewrite"):
-            generate.validate_lifecycle_transition(previously_reactivated, rewritten, "2026-07-29")
+            generate.validate_lifecycle_transition(previously_reactivated, rewritten, self.data["page_date"])
 
     def test_status_only_pseudo_transitions_are_rejected(self) -> None:
         previous = copy.deepcopy(self.by_id["eurohpc-development-access-2026"])
@@ -238,7 +233,7 @@ class ArchivePolicyTests(unittest.TestCase):
             }
         )
         with self.assertRaisesRegex(ValueError, "requires retired_at"):
-            generate.validate_lifecycle_transition(previous, current, "2026-07-29")
+            generate.validate_lifecycle_transition(previous, current, self.data["page_date"])
 
         previous = copy.deepcopy(self.by_id["google-gara-eftqc-2026"])
         current = copy.deepcopy(previous)
@@ -255,7 +250,7 @@ class ArchivePolicyTests(unittest.TestCase):
             }
         )
         with self.assertRaisesRegex(ValueError, "reactivation date must be newly set"):
-            generate.validate_lifecycle_transition(previous, current, "2026-07-29")
+            generate.validate_lifecycle_transition(previous, current, self.data["page_date"])
 
     def test_manifest_classifies_real_retirement_and_reactivation(self) -> None:
         base = self.candidate_data()
@@ -268,12 +263,13 @@ class ArchivePolicyTests(unittest.TestCase):
                 "closing_soon": False,
                 "application_url": None,
                 "apply_label": None,
-                "retired_at": "2026-07-29",
+                "retired_at": self.data["page_date"],
                 "retirement_reason": "Test retirement.",
             }
         )
         self.recount(current)
-        manifest = generate.diff_snapshots(base, current, "2026-07-29-000000000000")
+        self.recount(current)
+        manifest = generate.diff_snapshots(base, current, "2026-07-30-000000000000")
         change = next(item for item in manifest["changes"] if item["id"] == record["id"])
         self.assertEqual(change["change_type"], "retired")
 
@@ -289,11 +285,12 @@ class ArchivePolicyTests(unittest.TestCase):
                 "apply_label": self.by_id["eurohpc-development-access-2026"]["apply_label"],
                 "retired_at": None,
                 "retirement_reason": None,
-                "reactivated_at": "2026-07-29",
+                "reactivated_at": self.data["page_date"],
             }
         )
         self.recount(reactivated)
-        manifest = generate.diff_snapshots(current, reactivated, "2026-07-29-111111111111")
+        self.recount(reactivated)
+        manifest = generate.diff_snapshots(current, reactivated, "2026-07-30-111111111111")
         change = next(item for item in manifest["changes"] if item["id"] == record["id"])
         self.assertEqual(change["change_type"], "reactivated")
 

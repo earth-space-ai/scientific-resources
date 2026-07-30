@@ -44,6 +44,51 @@ class RenderContractTests(unittest.TestCase):
             self.assertEqual(facts.start_counts.get("article"), len(self.data["opportunities"]))
             self.assertGreaterEqual(facts.start_counts.get("nav", 0), 1)
             self.assertGreaterEqual(facts.start_counts.get("details", 0), len(self.data["opportunities"]) + 1)
+            self.assertIn('role="tablist"', text)
+            self.assertIn('id="records-root" role="tabpanel" aria-labelledby="tab-curated"', text)
+            self.assertIn('aria-controls="records-root"', text)
+            self.assertIn('recordsRoot.setAttribute("aria-labelledby"', text)
+            self.assertIn("Curated for Jason", text)
+            self.assertIn("All Opportunities", text)
+            self.assertIn('button[role="tab"][aria-selected="true"]', text)
+            self.assertIn('button[aria-disabled="true"]', text)
+            self.assertIn('button.removeAttribute("aria-disabled")', text)
+            self.assertIn("Any status", text)
+            self.assertIn("Funding Pulse measures officially quantified resources", text)
+            self.assertIn("Partially quantified current records", text)
+            self.assertIn("No comparable Funding Pulse baseline for this legacy snapshot", text)
+            self.assertIn("Legacy 1.0.0 snapshot: full-universe relevance classification and All Opportunities are unavailable", text)
+            self.assertIn("Funding Pulse unavailable for this legacy snapshot", text)
+            pulse_section = text.split('<section class="funding-pulse"', 1)[1].split('<div id="records-root"', 1)[0]
+            for public_term in (
+                "Round budget",
+                "Conference grant cap",
+                "Workshop grant cap",
+                "Annual credit range",
+                "Typical QPU-hours allocation",
+                "USD 90,000 round budget",
+                "Conference grants up to USD 2,000",
+                "Workshop grants up to USD 1,500",
+                "Up to USD 5,000 AWS Promotional Credit",
+                "one-year sponsorship",
+                "Provider-specific credit; not fungible with other providers.",
+                "U.S. sponsor current record",
+                "Per-award amount",
+            ):
+                self.assertIn(public_term, pulse_section)
+            for raw_term in (
+                "program-pool-usd",
+                "conference-cap-usd",
+                "annual-credit-usd",
+                "typical-qpu-hours",
+                "per_award_ceiling_not_program_pool",
+                "provider_specific_credit_not_fungible",
+                "Up to 5000 AWS Promotional Credit USD",
+                "cash|program_pool",
+                "provider:DigitalOcean",
+            ):
+                self.assertNotIn(raw_term, pulse_section)
+            self.assertNotIn("pulse-table", text)
             self.assertIn('href="#main"', text)
             self.assertNotRegex(text, r"\{\{[A-Z0-9_]+\}\}")
 
@@ -61,9 +106,9 @@ class RenderContractTests(unittest.TestCase):
         closing_soon_count = sum(1 for record in self.data["opportunities"] if record["closing_soon"])
         for profile in ("primary", "mirror"):
             text, _ = self.parsed(profile)
-            self.assertEqual(len(re.findall(r'<article class="card card-open"', text)), status_counts["open"])
-            self.assertEqual(len(re.findall(r'<article class="card card-upcoming"', text)), status_counts["upcoming"])
-            self.assertEqual(len(re.findall(r'<article class="card card-closed"', text)), status_counts["closed"])
+            self.assertEqual(len(re.findall(r'<article class="card card-open(?: is-hidden)?"', text)), status_counts["open"])
+            self.assertEqual(len(re.findall(r'<article class="card card-upcoming(?: is-hidden)?"', text)), status_counts["upcoming"])
+            self.assertEqual(len(re.findall(r'<article class="card card-closed(?: is-hidden)?"', text)), status_counts["closed"])
             self.assertEqual(len(re.findall(r'class="button apply-link"', text)), application_count)
             self.assertEqual(len(re.findall(r'<span class="badge badge-soon"', text)), closing_soon_count)
 
@@ -112,6 +157,8 @@ class RenderContractTests(unittest.TestCase):
             self.assertIn('fetch("/scientific-resources/snapshots/index.json"', text)
             self.assertIn('item.data_url', text)
             self.assertIn('item.change_manifest_url', text)
+            self.assertIn('item.funding_pulse_url', text)
+            self.assertIn('renderPulseUnavailable()', text)
             self.assertNotIn('"./snapshots/', text)
             self.assertNotIn('"snapshots/', text)
 
@@ -126,11 +173,11 @@ class RenderContractTests(unittest.TestCase):
             "snapshot-timezone",
         )
         expected_assignments = (
-            "pageOpenCount.textContent = data.counts.open;",
-            "summaryTotalCount.textContent = data.counts.total;",
-            "summaryOpenCount.textContent = data.counts.open;",
-            "summaryUpcomingCount.textContent = data.counts.upcoming;",
-            "summaryClosedCount.textContent = data.counts.closed;",
+            "pageOpenCount.textContent = scopedCounts.open;",
+            "summaryTotalCount.textContent = scopedCounts.total;",
+            "summaryOpenCount.textContent = scopedCounts.open;",
+            "summaryUpcomingCount.textContent = scopedCounts.upcoming;",
+            "summaryClosedCount.textContent = scopedCounts.closed;",
             "snapshotDate.textContent = data.page_date;",
             'snapshotDate.setAttribute("datetime", data.page_date);',
             "snapshotTimezone.textContent = data.page_timezone;",

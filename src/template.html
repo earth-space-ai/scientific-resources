@@ -125,6 +125,7 @@ input[type="search"], select {
   font: .9rem var(--sans);
 }
 .filter-group { display: flex; gap: .4rem; flex-wrap: wrap; }
+.view-tabs { flex-basis: 100%; display: flex; gap: .4rem; flex-wrap: wrap; }
 button {
   min-height: var(--tap);
   padding: .45rem .8rem;
@@ -136,6 +137,8 @@ button {
   cursor: pointer;
 }
 button[aria-pressed="true"] { border-color: var(--ink); background: var(--ink); color: white; }
+button[role="tab"][aria-selected="true"] { border-color: var(--ink); background: var(--ink); color: white; }
+button[aria-disabled="true"], button:disabled { cursor: not-allowed; opacity: .58; }
 .result-count { flex-basis: 100%; margin: 0; font: .75rem var(--mono); }
 .snapshot-status { flex-basis: 100%; margin: 0; color: var(--muted); font: .75rem var(--mono); }
 .diff-summary {
@@ -159,7 +162,42 @@ button[aria-pressed="true"] { border-color: var(--ink); background: var(--ink); 
 }
 .closing-soon h2 { margin: 0 0 .3rem; font: 700 .75rem var(--mono); text-transform: uppercase; letter-spacing: .1em; }
 .closing-soon p { margin: 0; }
-.resource-group, .archive, .methodology { scroll-margin-top: 1rem; margin-bottom: 3rem; }
+.resource-group, .archive, .methodology, .funding-pulse { scroll-margin-top: 1rem; margin-bottom: 3rem; }
+.funding-pulse {
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--open);
+  background: var(--surface);
+}
+.legacy-notice {
+  margin: 0 0 1rem;
+  padding: .85rem 1rem;
+  border: 1px solid #c5b16f;
+  border-left: 4px solid var(--accent);
+  background: #fff8df;
+}
+.legacy-notice[hidden] { display: none; }
+.pulse-counts {
+  display: flex;
+  gap: .7rem 1.5rem;
+  flex-wrap: wrap;
+  padding: 0;
+  list-style: none;
+  font: .75rem/1.4 var(--mono);
+}
+.pulse-note { margin: .45rem 0; color: var(--muted); }
+.pulse-warnings { margin: .75rem 0; padding-left: 1.2rem; color: var(--muted); }
+.pulse-categories { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .85rem; margin-top: 1rem; }
+.pulse-category { padding: .85rem; border: 1px solid var(--line); background: rgba(255,253,247,.7); }
+.pulse-category h3 { margin: 0 0 .65rem; font-size: .95rem; }
+.pulse-entry { padding: .65rem 0; border-top: 1px solid var(--line); }
+.pulse-entry:first-of-type { border-top: 0; padding-top: 0; }
+.pulse-entry h4 { margin: 0 0 .35rem; font-size: .9rem; }
+.pulse-entry dl, .pulse-entry dd { margin: 0; }
+.pulse-entry dl { display: grid; grid-template-columns: minmax(6rem, max-content) 1fr; gap: .28rem .75rem; font-size: .82rem; }
+.pulse-entry dt { color: var(--muted); font: .7rem/1.35 var(--mono); text-transform: uppercase; }
+.pulse-entry dd { overflow-wrap: break-word; word-break: normal; }
+.pulse-empty { color: var(--muted); font-size: .82rem; }
 .section-heading {
   display: flex;
   justify-content: space-between;
@@ -170,7 +208,7 @@ button[aria-pressed="true"] { border-color: var(--ink); background: var(--ink); 
 }
 .section-heading h2 { margin: 0 0 .5rem; font-size: 1.45rem; }
 .section-heading p { margin: 0 0 .5rem; color: var(--muted); font: .75rem var(--mono); text-transform: uppercase; }
-.card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 1rem; }
+.card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 1rem; align-items: start; }
 .card {
   display: flex;
   flex-direction: column;
@@ -187,7 +225,7 @@ button[aria-pressed="true"] { border-color: var(--ink); background: var(--ink); 
 .card-top { display: flex; justify-content: space-between; align-items: start; gap: .5rem; }
 .provider { margin: .15rem 0 0; color: var(--muted); font: .7rem var(--mono); text-transform: uppercase; letter-spacing: .08em; }
 .badges { display: flex; justify-content: end; gap: .25rem; margin: 0; flex-wrap: wrap; }
-.badge { padding: .18rem .48rem; border-radius: 999px; font: 700 .65rem var(--mono); text-transform: uppercase; }
+.badge { padding: .18rem .48rem; border-radius: 999px; font: 700 .65rem var(--mono); text-transform: uppercase; white-space: nowrap; }
 .badge-open { color: var(--open); background: var(--open-bg); }
 .badge-upcoming { color: var(--upcoming); background: var(--upcoming-bg); }
 .badge-closed, .badge-group { color: var(--closed); background: var(--closed-bg); }
@@ -230,7 +268,10 @@ footer .wrap { display: flex; justify-content: space-between; gap: .5rem 1rem; f
 footer p { margin: 0; }
 @media (max-width: 700px) {
   .method-grid { grid-template-columns: 1fr; }
-  .facts div { grid-template-columns: 5.25rem minmax(0, 1fr); }
+  .facts div, .pulse-entry dl { grid-template-columns: 1fr; gap: .12rem; }
+  .pulse-categories { grid-template-columns: 1fr; }
+  .card-top { display: block; }
+  .badges { justify-content: start; }
 }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 @media print {
@@ -275,6 +316,10 @@ footer p { margin: 0; }
           <option value="current">Current reviewed snapshot</option>
         </select>
       </div>
+      <div class="view-tabs" role="tablist" aria-label="Opportunity view">
+        <button type="button" role="tab" id="tab-curated" data-view="curated" aria-selected="true" aria-controls="records-root">Curated for Jason</button>
+        <button type="button" role="tab" id="tab-all" data-view="all" aria-selected="false" aria-controls="records-root">All Opportunities</button>
+      </div>
       <div>
         <span class="control-label">Status</span>
         <div class="filter-group" role="group" aria-label="Filter by status">
@@ -282,7 +327,7 @@ footer p { margin: 0; }
           <button type="button" data-status="open" aria-pressed="false">Open</button>
           <button type="button" data-status="upcoming" aria-pressed="false">Upcoming</button>
           <button type="button" data-status="closed" aria-pressed="false">Archived ({{CLOSED_COUNT}})</button>
-          <button type="button" data-status="all" aria-pressed="false">All</button>
+          <button type="button" data-status="all" aria-pressed="false">Any status</button>
         </div>
       </div>
       <button type="button" id="clear">Clear</button>
@@ -298,6 +343,7 @@ footer p { margin: 0; }
       <a href="#heading-hpc">HPC and GPU</a>
       <a href="#heading-grants">Grants</a>
       <a href="#archive">Archive</a>
+      <a href="#funding-pulse">Funding Pulse</a>
       <a href="#methodology">Methodology</a>
     </nav>
 
@@ -306,7 +352,15 @@ footer p { margin: 0; }
       <p id="closing-soon-list">{{CLOSING_SOON}}</p>
     </aside>
 
-    <div id="records-root">
+    <div class="legacy-notice" id="legacy-notice" role="status" hidden>
+      Legacy 1.0.0 snapshot: full-universe relevance classification and All Opportunities are unavailable. Showing the historical curated-only record set.
+    </div>
+
+    <div id="funding-pulse-root">
+{{FUNDING_PULSE}}
+    </div>
+
+    <div id="records-root" role="tabpanel" aria-labelledby="tab-curated" tabindex="0">
 {{ACTIVE_SECTIONS}}
     </div>
 
@@ -368,6 +422,9 @@ footer p { margin: 0; }
   var snapshotDate = document.getElementById("snapshot-date");
   var snapshotTimezone = document.getElementById("snapshot-timezone");
   var recordsRoot = document.getElementById("records-root");
+  var legacyNotice = document.getElementById("legacy-notice");
+  var pulseRoot = document.getElementById("funding-pulse-root");
+  var currentPulseHtml = pulseRoot.innerHTML;
   var archive = document.getElementById("archive");
   var archiveGrid = document.getElementById("archive-grid");
   var archiveSummary = document.getElementById("archive-summary");
@@ -378,16 +435,106 @@ footer p { margin: 0; }
   var currentData = JSON.parse(document.getElementById("dataset").textContent);
   var cards = Array.prototype.slice.call(document.querySelectorAll("article.card"));
   var buttons = Array.prototype.slice.call(document.querySelectorAll("button[data-status]"));
+  var viewButtons = Array.prototype.slice.call(document.querySelectorAll("button[data-view]"));
   var selectedStatus = "active";
+  var selectedView = new URLSearchParams(window.location.search).get("view") === "all" ? "all" : "curated";
+  var fullUniverseView = selectedView;
+  var selectedData = currentData;
   var historyIndex = null;
   var manifests = {};
+  var warningLabels = {
+    alternative_award_type_not_summed: "Alternative award type; shown separately and not summed.",
+    compute_access_not_cash: "Compute access, not cash.",
+    contingent_prize_not_program_pool: "Contingent prize; not a program pool.",
+    historical_cumulative_total_excluded: "Historical cumulative totals are excluded from current totals.",
+    in_kind_components_unquantified: "In-kind components are unquantified.",
+    per_award_ceiling_not_program_pool: "Per-award ceiling; not a program pool.",
+    per_award_prize_not_program_pool: "Per-recipient prize; not a program pool.",
+    per_award_range_not_program_pool: "Per-award range; not a program pool.",
+    prize_envelope_not_grant_pool: "Prize envelope; not a grant pool.",
+    provider_specific_credit_not_fungible: "Provider-specific credit; not fungible with other providers.",
+    service_credit_not_cash: "Service credit, not cash."
+  };
+  var scopeLabels = {
+    us_sponsor: "U.S. sponsor current record",
+    all_only: "International or non-U.S.-sponsor record; visible in All Opportunities only"
+  };
+  var accountingLabels = {
+    program_pool: "Program pool",
+    per_award: "Per-award amount",
+    credit: "Provider service credit",
+    compute: "Compute access",
+    facility: "Facility access",
+    prize: "Prize",
+    fellowship: "Fellowship",
+    other_in_kind: "Other in-kind support"
+  };
+  var measureLabels = {
+    "annual-credit-usd": "Annual credit range",
+    "conference-cap-usd": "Conference grant cap",
+    "credit-ceiling-usd": "Credit ceiling",
+    "grand-prize-eur": "Grand prize",
+    "per-project-usd": "Per-project award range",
+    "program-pool-usd": "Round budget",
+    "typical-qpu-hours": "Typical QPU-hours allocation",
+    "workshop-cap-usd": "Workshop grant cap"
+  };
   controls.hidden = false;
+
+  function isLegacyData(data) {
+    return !data.view_policy || !data.opportunities[0] || !data.opportunities[0].relevance;
+  }
+
+  function activeView(data) {
+    return isLegacyData(data) ? "curated" : selectedView;
+  }
+
+  function updateViewTabs(data) {
+    var legacy = isLegacyData(data);
+    var displayedView = legacy ? "curated" : selectedView;
+    viewButtons.forEach(function (button) {
+      var buttonView = button.getAttribute("data-view");
+      var selected = buttonView === displayedView;
+      button.setAttribute("aria-selected", String(selected));
+      button.tabIndex = selected ? 0 : -1;
+      if (buttonView === "all") {
+        if (legacy) button.setAttribute("aria-disabled", "true");
+        else button.removeAttribute("aria-disabled");
+        button.textContent = legacy ? "All Opportunities unavailable for legacy snapshot" : "All Opportunities";
+      }
+    });
+    recordsRoot.setAttribute("aria-labelledby", displayedView === "all" ? "tab-all" : "tab-curated");
+    legacyNotice.hidden = !legacy;
+  }
+
+  function filteredRecords(data) {
+    if (!data.view_policy || !data.opportunities[0] || !data.opportunities[0].relevance) return data.opportunities;
+    if (selectedView === "all") return data.opportunities;
+    return data.opportunities.filter(function (record) {
+      return record.relevance && (record.relevance.classification === "direct" || record.relevance.classification === "adjacent");
+    });
+  }
+
+  function countsFor(records) {
+    var counts = {total: records.length, open: 0, upcoming: 0, closed: 0};
+    records.forEach(function (record) { counts[record.status] += 1; });
+    return counts;
+  }
+
+  function updateUrl() {
+    var url = new URL(window.location.href);
+    url.searchParams.set("view", selectedView);
+    if (snapshotSelect.value && snapshotSelect.value !== "current") url.searchParams.set("snapshot", snapshotSelect.value);
+    else url.searchParams.delete("snapshot");
+    window.history.replaceState(null, "", url.toString());
+  }
 
   function matches(card, query) {
     var status = card.getAttribute("data-status");
+    var viewMatch = activeView(selectedData) === "all" || (card.getAttribute("data-view") || "curated all").indexOf("curated") !== -1;
     var statusMatch = selectedStatus === "all" || status === selectedStatus ||
       (selectedStatus === "active" && (status === "open" || status === "upcoming"));
-    return statusMatch && (!query || card.getAttribute("data-search").indexOf(query) !== -1);
+    return viewMatch && statusMatch && (!query || card.getAttribute("data-search").indexOf(query) !== -1);
   }
 
   function applyFilters() {
@@ -401,7 +548,8 @@ footer p { margin: 0; }
     document.querySelectorAll("section.resource-group").forEach(function (section) {
       section.classList.toggle("is-hidden", section.querySelectorAll("article.card:not(.is-hidden)").length === 0);
     });
-    count.textContent = "Showing " + shown + " of " + cards.length + " records";
+    var viewLabel = isLegacyData(selectedData) ? "legacy curated-only snapshot" : (selectedView === "curated" ? "Curated for Jason" : "All Opportunities");
+    count.textContent = "Showing " + shown + " of " + cards.length + " records in " + viewLabel;
     empty.classList.toggle("is-hidden", shown !== 0);
   }
 
@@ -434,15 +582,174 @@ footer p { margin: 0; }
     return fragment;
   }
 
+  function findRecord(recordId) {
+    return (selectedData.opportunities || []).filter(function (record) { return record.id === recordId; })[0] || null;
+  }
+
+  function findMeasure(record, measureId) {
+    return record && record.resources ? (record.resources.measures || []).filter(function (measure) {
+      return measure.measure_id === measureId;
+    })[0] || null : null;
+  }
+
+  function fieldList(parent, pairs) {
+    var list = document.createElement("dl");
+    pairs.forEach(function (pair) {
+      var term = document.createElement("dt");
+      term.textContent = pair[0];
+      var detail = document.createElement("dd");
+      detail.textContent = pair[1] == null ? "" : String(pair[1]);
+      list.appendChild(term);
+      list.appendChild(detail);
+    });
+    parent.appendChild(list);
+  }
+
+  function fallbackPublicLabel(value) {
+    if (!value) return "Official measure";
+    return String(value).replace(/-(usd|eur|gbp)$/i, "").replace(/[-_]+/g, " ").replace(/^\w/, function (letter) {
+      return letter.toUpperCase();
+    });
+  }
+
+  function recordMeasureLabel(record, measure, entry) {
+    if (record && measure) return record.provider + " — " + record.program;
+    return entry.label || entry.bucket_id || "Official measure";
+  }
+
+  function measureLabel(measure) {
+    if (!measure || !measure.measure_id) return "Official measure";
+    var suffix = measure.measure_id.split(":").pop();
+    return measureLabels[suffix] || fallbackPublicLabel(suffix);
+  }
+
+  function measureAmountText(measure, entry) {
+    if (measure && measure.amount && measure.amount.display) return measure.amount.display;
+    return "Official amount not quantified";
+  }
+
+  function periodText(period) {
+    if (!period) return "Not stated";
+    return period.display || "Not stated";
+  }
+
+  function warningText(measure) {
+    var warnings = measure && measure.warnings ? measure.warnings : [];
+    if (!warnings.length) return "Aggregated only with matching resource kind, unit, basis, period, and current status.";
+    return warnings.map(function (warning) {
+      return warningLabels[warning] || fallbackPublicLabel(warning) + ".";
+    }).join(" ");
+  }
+
+  function renderPulseUnavailable() {
+    pulseRoot.replaceChildren();
+    var section = document.createElement("section");
+    section.className = "funding-pulse";
+    section.id = "funding-pulse";
+    section.setAttribute("aria-labelledby", "funding-pulse-heading");
+    appendText(section, "h2", "", "Funding Pulse").id = "funding-pulse-heading";
+    appendText(section, "p", "", "Funding Pulse unavailable for this legacy snapshot. This snapshot predates structured resource facts and no funding_pulse_url sidecar exists, so no historical pulse rows are rendered.");
+    pulseRoot.appendChild(section);
+  }
+
+  function renderPulseCategory(root, title, entries) {
+    var category = document.createElement("section");
+    category.className = "pulse-category";
+    appendText(category, "h3", "", title);
+    if (!entries.length) {
+      appendText(category, "p", "pulse-empty", "No quantified current bucket.");
+    }
+    entries.forEach(function (entry) {
+      var references = entry.records && entry.records.length ? entry.records : [{id: null, measure_id: null}];
+      references.forEach(function (reference) {
+        var record = findRecord(reference.id);
+        var measure = findMeasure(record, reference.measure_id);
+        var item = document.createElement("div");
+        item.className = "pulse-entry";
+        appendText(item, "h4", "", recordMeasureLabel(record, measure, entry));
+        fieldList(item, [
+          ["Measure", measureLabel(measure)],
+          ["Amount", measureAmountText(measure, entry)],
+          ["Period", measure && measure.period ? periodText(measure.period) : periodText(entry.period)],
+          ["Unit", entry.unit && entry.unit.native_label ? entry.unit.native_label : ""],
+          ["Scope", scopeLabels[entry.scope] || fallbackPublicLabel(entry.scope)],
+          ["Accounting", accountingLabels[entry.accounting_bucket] || fallbackPublicLabel(entry.accounting_bucket)],
+          ["Caveat", warningText(measure)]
+        ]);
+        category.appendChild(item);
+      });
+    });
+    root.appendChild(category);
+  }
+
+  function renderPulse(pulse) {
+    if (!pulse) {
+      renderPulseUnavailable();
+      return;
+    }
+    pulseRoot.replaceChildren();
+    var coverage = pulse.coverage || {};
+    var section = document.createElement("section");
+    section.className = "funding-pulse";
+    section.id = "funding-pulse";
+    section.setAttribute("aria-labelledby", "funding-pulse-heading");
+    appendText(section, "h2", "", "Funding Pulse").id = "funding-pulse-heading";
+    appendText(section, "p", "", "Funding Pulse measures officially quantified resources visible in this maintained database snapshot. It is not an estimate of all funding in existence.");
+    var counts = document.createElement("ul");
+    counts.className = "pulse-counts";
+    [
+      [pulse.record_totals && pulse.record_totals.total, "verified records"],
+      [pulse.record_totals && pulse.record_totals.current, "current open/upcoming"],
+      [coverage.quantified_current_records, "quantified current records"],
+      [coverage.partially_quantified_current_records, "partially quantified current records"],
+      [coverage.unquantified_current_records, "unquantified current records"]
+    ].forEach(function (item) {
+      var li = document.createElement("li");
+      var strong = document.createElement("strong");
+      strong.textContent = item[0] == null ? "0" : String(item[0]);
+      li.appendChild(strong);
+      li.appendChild(document.createTextNode(" " + item[1]));
+      counts.appendChild(li);
+    });
+    section.appendChild(counts);
+    if (coverage.unknown_coverage_note) appendText(section, "p", "pulse-note", coverage.unknown_coverage_note);
+    if (pulse.snapshot_delta && !pulse.snapshot_delta.baseline_available) {
+      appendText(section, "p", "retirement", "No comparable Funding Pulse baseline for this legacy snapshot. Previous snapshot has no Funding Pulse sidecar.");
+    }
+    var categories = document.createElement("div");
+    categories.className = "pulse-categories";
+    [
+      ["Official program pools", "program_pools"],
+      ["Per-award ranges", "per_award_ranges"],
+      ["Provider-specific credits", "credits"],
+      ["Compute and facility", "compute_facility"],
+      ["Prizes and fellowships", "prizes_fellowships"],
+      ["Other in-kind", "other_in_kind"]
+    ].forEach(function (category) {
+      renderPulseCategory(categories, category[0], pulse[category[1]] || []);
+    });
+    section.appendChild(categories);
+    var warnings = document.createElement("ul");
+    warnings.className = "pulse-warnings";
+    (pulse.warnings || []).forEach(function (warning) { appendText(warnings, "li", "", warning); });
+    appendText(warnings, "li", "", "Provider/platform-specific credits are shown separately and are not fungible across AWS, DigitalOcean, Microsoft Azure, or any other provider.");
+    section.appendChild(warnings);
+    pulseRoot.appendChild(section);
+  }
+
   function recordCard(record, archived) {
     var article = document.createElement("article");
     article.className = "card card-" + record.status;
     article.id = "card-" + record.id;
     article.setAttribute("data-status", record.status);
     article.setAttribute("data-group", record.group);
+    article.setAttribute("data-view", record.relevance && record.relevance.classification === "unrelated" ? "all" : "curated all");
     article.setAttribute("data-search", [
       record.program, record.provider, record.group_label, record.amount, record.deadline,
-      record.eligibility, record.endpoint_note, record.retirement_reason || ""
+      record.eligibility, record.endpoint_note, record.retirement_reason || "",
+      record.relevance ? record.relevance.public_reason : "",
+      record.relevance ? (record.relevance.signals || []).join(" ") : "",
+      record.resources ? record.resources.quantification_status : ""
     ].join(" ").toLowerCase());
 
     var top = document.createElement("div");
@@ -452,6 +759,7 @@ footer p { margin: 0; }
     badges.className = "badges";
     appendText(badges, "span", "badge badge-" + record.status, statusLabel(record.status));
     if (record.closing_soon) appendText(badges, "span", "badge badge-soon", "Closing soon");
+    if (record.relevance) appendText(badges, "span", "badge badge-relevance", record.relevance.classification === "unrelated" ? "All-only" : (record.relevance.classification === "direct" ? "Direct fit" : "Adjacent fit"));
     if (archived) appendText(badges, "span", "badge badge-group", record.group_label);
     top.appendChild(badges);
     article.appendChild(top);
@@ -459,7 +767,7 @@ footer p { margin: 0; }
 
     var facts = document.createElement("dl");
     facts.className = "facts";
-    [["Resources", record.amount], ["Deadline", record.deadline]].forEach(function (item) {
+    [["Resources", record.amount], ["Deadline", record.deadline], ["Fit", record.relevance ? record.relevance.public_reason : "Legacy curated snapshot predates relevance classification."]].forEach(function (item) {
       var row = document.createElement("div");
       appendText(row, "dt", "", item[0]);
       appendText(row, "dd", "", item[1]);
@@ -505,11 +813,14 @@ footer p { margin: 0; }
   }
 
   function renderSnapshot(data) {
-    pageOpenCount.textContent = data.counts.open;
-    summaryTotalCount.textContent = data.counts.total;
-    summaryOpenCount.textContent = data.counts.open;
-    summaryUpcomingCount.textContent = data.counts.upcoming;
-    summaryClosedCount.textContent = data.counts.closed;
+    updateViewTabs(data);
+    var scoped = filteredRecords(data);
+    var scopedCounts = countsFor(scoped);
+    pageOpenCount.textContent = scopedCounts.open;
+    summaryTotalCount.textContent = scopedCounts.total;
+    summaryOpenCount.textContent = scopedCounts.open;
+    summaryUpcomingCount.textContent = scopedCounts.upcoming;
+    summaryClosedCount.textContent = scopedCounts.closed;
     snapshotDate.textContent = data.page_date;
     snapshotDate.setAttribute("datetime", data.page_date);
     snapshotTimezone.textContent = data.page_timezone;
@@ -520,7 +831,7 @@ footer p { margin: 0; }
     };
     recordsRoot.replaceChildren();
     Object.keys(groups).forEach(function (group) {
-      var groupRecords = data.opportunities.filter(function (record) {
+      var groupRecords = scoped.filter(function (record) {
         return record.group === group && record.status !== "closed";
       });
       var section = document.createElement("section");
@@ -530,7 +841,9 @@ footer p { margin: 0; }
       var header = document.createElement("header");
       header.className = "section-heading";
       appendText(header, "h2", "", groups[group]).id = "heading-" + group;
-      appendText(header, "p", "", groupRecords.filter(function (record) { return record.status === "open"; }).length + " open");
+      var openCount = groupRecords.filter(function (record) { return record.status === "open"; }).length;
+      var upcomingCount = groupRecords.filter(function (record) { return record.status === "upcoming"; }).length;
+      appendText(header, "p", "", openCount + " open" + (upcomingCount ? " · " + upcomingCount + " upcoming" : ""));
       section.appendChild(header);
       var grid = document.createElement("div");
       grid.className = "card-grid";
@@ -539,17 +852,18 @@ footer p { margin: 0; }
       recordsRoot.appendChild(section);
     });
     archiveGrid.replaceChildren();
-    data.opportunities.filter(function (record) { return record.status === "closed"; })
+    scoped.filter(function (record) { return record.status === "closed"; })
       .forEach(function (record) { archiveGrid.appendChild(recordCard(record, true)); });
-    archiveSummary.textContent = "Archive — " + data.counts.closed + " non-actionable records";
-    archiveFilter.textContent = "Archived (" + data.counts.closed + ")";
+    archiveSummary.textContent = "Archive — " + scopedCounts.closed + " non-actionable records";
+    archiveFilter.textContent = "Archived (" + scopedCounts.closed + ")";
     closingHeading.textContent = "Recorded as closing within 10 days of " + data.page_date;
-    var closing = data.opportunities.filter(function (record) { return record.closing_soon; });
+    var closing = scoped.filter(function (record) { return record.closing_soon; });
     closingList.textContent = closing.length ? closing.map(function (record) {
       return record.program + " — " + record.next_deadline;
     }).join(" · ") : "No actionable records were marked as closing soon in this snapshot.";
     cards = Array.prototype.slice.call(document.querySelectorAll("article.card"));
     applyFilters();
+    updateUrl();
   }
 
   function renderDiff(manifest) {
@@ -609,16 +923,27 @@ footer p { margin: 0; }
           }).then(function (manifest) {
             manifests[item.snapshot_id] = manifest;
             return manifest;
-          })
+          }),
+        item.funding_pulse_url ?
+          fetch(item.funding_pulse_url, {credentials: "same-origin"}).then(function (response) {
+            if (!response.ok) throw new Error("funding pulse unavailable");
+            return response.json();
+          }) :
+          Promise.resolve(null)
       ]).then(function (loaded) {
+        selectedData = loaded[0];
         renderSnapshot(loaded[0]);
         renderDiff(loaded[1]);
+        renderPulse(loaded[2]);
         snapshotStatus.textContent = "Showing reviewed snapshot " + snapshotLabel(item) + ".";
       });
     }).catch(function () {
       snapshotSelect.value = "current";
+      selectedView = fullUniverseView;
+      selectedData = currentData;
       renderSnapshot(currentData);
       renderDiff(null);
+      pulseRoot.innerHTML = currentPulseHtml;
       snapshotStatus.textContent = "Historical snapshots are unavailable; showing current pre-rendered snapshot.";
     });
   }
@@ -630,6 +955,36 @@ footer p { margin: 0; }
     });
     applyFilters();
   }
+
+  function selectView(view) {
+    if (isLegacyData(selectedData)) {
+      updateViewTabs(selectedData);
+      applyFilters();
+      updateUrl();
+      return;
+    }
+    selectedView = view === "all" ? "all" : "curated";
+    fullUniverseView = selectedView;
+    updateViewTabs(selectedData);
+    renderSnapshot(selectedData);
+  }
+
+  viewButtons.forEach(function (button) {
+    button.addEventListener("click", function () {
+      selectView(button.getAttribute("data-view"));
+    });
+    button.addEventListener("keydown", function (event) {
+      if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
+      event.preventDefault();
+      if (isLegacyData(selectedData)) {
+        updateViewTabs(selectedData);
+        document.getElementById("tab-curated").focus();
+        return;
+      }
+      selectView(button.getAttribute("data-view") === "curated" ? "all" : "curated");
+      document.querySelector('button[data-view="' + selectedView + '"]').focus();
+    });
+  });
 
   buttons.forEach(function (button) {
     button.addEventListener("click", function () {
@@ -659,14 +1014,25 @@ footer p { margin: 0; }
   snapshotSelect.addEventListener("focus", loadHistoryIndex);
   snapshotSelect.addEventListener("change", function () {
     if (snapshotSelect.value === "current") {
+      selectedView = fullUniverseView;
+      selectedData = currentData;
       renderSnapshot(currentData);
       renderDiff(null);
+      pulseRoot.innerHTML = currentPulseHtml;
       snapshotStatus.textContent = "Showing current pre-rendered snapshot.";
     } else {
       selectSnapshot(snapshotSelect.value);
     }
   });
-  applyFilters();
+  if (selectedView === "all") selectView("all");
+  else selectView("curated");
+  var initialSnapshot = new URLSearchParams(window.location.search).get("snapshot");
+  if (initialSnapshot) {
+    loadHistoryIndex().then(function () {
+      snapshotSelect.value = initialSnapshot;
+      if (snapshotSelect.value === initialSnapshot) selectSnapshot(initialSnapshot);
+    });
+  }
 })();
 </script>
 </body>

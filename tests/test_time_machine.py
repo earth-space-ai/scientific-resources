@@ -24,6 +24,10 @@ def declared_counts(records: list[dict]) -> dict[str, int]:
     return {"total": len(records), **generate.status_counts(records)}
 
 
+def refresh(data: dict) -> None:
+    generate.refresh_derived_counts(data)
+
+
 def next_date(value: str) -> str:
     return (date.fromisoformat(value) + timedelta(days=1)).isoformat()
 
@@ -91,6 +95,17 @@ class TimeMachineTests(unittest.TestCase):
         self.assertEqual(manifest["counts"], {"added": 32, "changed": 0, "retired": 0, "reactivated": 0, "unchanged": 0})
         self.assertEqual({change["change_type"] for change in manifest["changes"]}, {"added"})
 
+    def test_first_v1_1_pulse_marks_legacy_baseline_unavailable(self):
+        latest = self.index["snapshots"][0]
+        manifest = load_json(HISTORY / "snapshots" / latest["snapshot_id"] / "change_manifest.json")
+        pulse = load_json(HISTORY / "snapshots" / latest["snapshot_id"] / "funding_pulse.json")
+        self.assertFalse(manifest["funding_pulse_delta"]["baseline_available"])
+        self.assertEqual(manifest["funding_pulse_delta"]["baseline_reason"], "previous_snapshot_has_no_funding_pulse")
+        self.assertFalse(pulse["snapshot_delta"]["baseline_available"])
+        self.assertEqual(pulse["snapshot_delta"]["baseline_reason"], "previous_snapshot_has_no_funding_pulse")
+        previous_id = manifest["previous_snapshot_id"]
+        self.assertFalse((HISTORY / "snapshots" / previous_id / "funding_pulse.json").exists())
+
     def test_manifest_transition_logic_ignores_operational_backfill(self):
         previous = json.loads(json.dumps(self.current))
         current = json.loads(json.dumps(self.current))
@@ -124,17 +139,9 @@ class TimeMachineTests(unittest.TestCase):
             record["verified_at"] = rollover_timestamp
             record["verified_date"] = rollover_date
             record["last_verified"] = rollover_date
+        refresh(current)
         manifest = generate.diff_snapshots(previous, current, "test")
-        self.assertEqual(
-            manifest["counts"],
-            {
-                "added": 0,
-                "changed": 0,
-                "retired": 0,
-                "reactivated": 0,
-                "unchanged": len(self.current["opportunities"]),
-            },
-        )
+        self.assertEqual({key: manifest["counts"][key] for key in ("added", "changed", "retired", "reactivated", "unchanged")}, {"added": 0, "changed": 0, "retired": 0, "reactivated": 0, "unchanged": len(self.current["opportunities"])})
         self.assertTrue(all(not change["changed_fields"] for change in manifest["changes"]))
         first_change = manifest["changes"][0]
         self.assertNotEqual(first_change["previous_record_sha256"], first_change["current_record_sha256"])
@@ -145,7 +152,7 @@ class TimeMachineTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(dir=scratch) as temp:
             temp_root = Path(temp)
             history = temp_root / "history"
-            copy_original_only_history(history)
+            shutil.copytree(HISTORY, history)
             data = temp_root / "opportunities.json"
             payload = json.loads(json.dumps(self.current))
             fixture_date = max(record["first_seen"] for record in payload["opportunities"])
@@ -161,7 +168,7 @@ class TimeMachineTests(unittest.TestCase):
             new_record["program"] = "Example Cycle-Safe Resource 9999"
             new_record["first_seen"] = payload["page_date"]
             payload["opportunities"].append(new_record)
-            payload["counts"] = declared_counts(payload["opportunities"])
+            refresh(payload)
             data.write_bytes(generate.canonical_json_bytes(payload))
             record_snapshot.record_snapshot(
                 data_path=data,
@@ -171,7 +178,7 @@ class TimeMachineTests(unittest.TestCase):
             index, snapshots = generate.load_history(history)
             self.assertEqual(index["snapshots"][0]["record_count"], len(self.current["opportunities"]) + 1)
             self.assertEqual(index["snapshots"][-1]["record_count"], 32)
-            self.assertEqual(len(snapshots), 2)
+            self.assertEqual(len(snapshots), len(self.index["snapshots"]) + 1)
         try:
             scratch.rmdir()
         except OSError:
@@ -181,6 +188,7 @@ class TimeMachineTests(unittest.TestCase):
         previous = json.loads(json.dumps(self.current))
         current = json.loads(json.dumps(self.current))
         current["opportunities"] = current["opportunities"][1:]
+        refresh(current)
         with self.assertRaisesRegex(ValueError, "remove previously published IDs"):
             generate.diff_snapshots(previous, current, "test")
 
@@ -246,7 +254,7 @@ class TimeMachineTests(unittest.TestCase):
             data.write_bytes(DATA_PATH.read_bytes())
             payload = load_json(data)
             payload["opportunities"] = payload["opportunities"][1:]
-            payload["counts"] = declared_counts(payload["opportunities"])
+            refresh(payload)
             data.write_bytes(generate.canonical_json_bytes(payload))
             with self.assertRaisesRegex(ValueError, "remove previously published IDs"):
                 record_snapshot.record_snapshot(

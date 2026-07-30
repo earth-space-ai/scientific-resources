@@ -1,13 +1,66 @@
 {
-  "schema_version": "1.0.0",
+  "schema_version": "1.1.0",
   "title": "Scientific Resource Tracker snapshot index",
-  "current_snapshot_id": "2026-07-29-eda96fe0f7bd",
+  "current_snapshot_id": "2026-07-30-75e1e5c54957",
   "generated_from": {
     "source_repository": "https://github.com/earth-space-ai/scientific-resources",
-    "source_commit": "7437c403214262d059913f1290929fccb515039b",
-    "build_spec_version": "1.0.0"
+    "source_commit": "e4d956b54a6a73f8a4a75dcf14cb41d24c18bfde",
+    "build_spec_version": "1.1.0"
   },
   "snapshots": [
+    {
+      "snapshot_id": "2026-07-30-75e1e5c54957",
+      "page_date": "2026-07-30",
+      "page_timezone": "America/Los_Angeles",
+      "verified_at": "2026-07-30T06:15:00Z",
+      "canonical_data_sha256": "75e1e5c549574cd2593e9e55b9de89b9145a797a91c8ce7badd1f9f56aea88c6",
+      "record_count": 70,
+      "status_counts": {
+        "open": 50,
+        "upcoming": 3,
+        "closed": 17
+      },
+      "stable_id_sha256": "a37cbee217c9ccb3efdc8fa7a9e73ad12a41e3ccae763d4a079af3c2804ec626",
+      "data_url": "/scientific-resources/snapshots/2026-07-30-75e1e5c54957/public_opportunities.json",
+      "change_manifest_url": "/scientific-resources/snapshots/2026-07-30-75e1e5c54957/change_manifest.json",
+      "source": {
+        "kind": "source-git",
+        "commit": "e4d956b54a6a73f8a4a75dcf14cb41d24c18bfde",
+        "path": "data/opportunities.json"
+      },
+      "schema_version": "1.1.0",
+      "view_counts": {
+        "curated": {
+          "total": 54,
+          "open": 38,
+          "upcoming": 1,
+          "closed": 15
+        },
+        "all": {
+          "total": 70,
+          "open": 50,
+          "upcoming": 3,
+          "closed": 17
+        }
+      },
+      "relevance_counts": {
+        "direct": 39,
+        "adjacent": 15,
+        "unrelated": 16
+      },
+      "funding_pulse_summary": {
+        "state": "available",
+        "program_pool_buckets": 1,
+        "per_award_buckets": 3,
+        "credit_buckets": 3,
+        "compute_facility_buckets": 1,
+        "prize_fellowship_buckets": 3,
+        "quantified_current_records": 7,
+        "unquantified_current_records": 45
+      },
+      "funding_pulse_url": "/scientific-resources/snapshots/2026-07-30-75e1e5c54957/funding_pulse.json",
+      "funding_pulse_sha256": "9cb34f0d356711f02aa0b998fea6ece8f4ddb1daabe190d69409a1a6d366563e"
+    },
     {
       "snapshot_id": "2026-07-29-eda96fe0f7bd",
       "page_date": "2026-07-29",

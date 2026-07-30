@@ -86,20 +86,31 @@ def record_snapshot(
         "commit": source_commit,
         "path": "data/opportunities.json",
     }
-    summary = generate.summarize_snapshot(data, data_sha, source)
     manifest = generate.diff_snapshots(previous, data, snapshot_id)
     manifest["previous_snapshot_id"] = index["snapshots"][0]["snapshot_id"]
     manifest["previous_data_sha256"] = index["snapshots"][0]["canonical_data_sha256"]
+    previous_pulse_path = history_dir / "snapshots" / index["snapshots"][0]["snapshot_id"] / "funding_pulse.json"
+    pulse = generate.build_funding_pulse(
+        data,
+        manifest,
+        snapshot_id=snapshot_id,
+        baseline_available=previous_pulse_path.exists(),
+        baseline_reason=None if previous_pulse_path.exists() else "previous_snapshot_has_no_funding_pulse",
+    )
+    summary = generate.summarize_snapshot(data, data_sha, source, pulse)
 
     snapshot_dir.mkdir(parents=False, exist_ok=False)
     (snapshot_dir / "public_opportunities.json").write_bytes(data_bytes)
     (snapshot_dir / "change_manifest.json").write_bytes(generate.canonical_json_bytes(manifest))
+    (snapshot_dir / "funding_pulse.json").write_bytes(generate.canonical_json_bytes(pulse))
 
     snapshots = [summary, *[item for item in index["snapshots"] if item["snapshot_id"] != snapshot_id]]
     snapshots = sort_snapshots(snapshots)
     index["snapshots"] = snapshots
     index["current_snapshot_id"] = snapshots[0]["snapshot_id"]
     index["generated_from"]["source_commit"] = source_commit
+    index["generated_from"]["build_spec_version"] = generate.BUILD_SPEC_VERSION
+    index["schema_version"] = generate.SNAPSHOT_INDEX_VERSION
     (history_dir / "index.json").write_bytes(generate.canonical_json_bytes(index))
     return snapshot_id
 
