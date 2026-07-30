@@ -12,6 +12,7 @@
     "record_totals",
     "view_record_counts",
     "snapshot_delta",
+    "provenance",
     "coverage",
     "program_pools",
     "per_award_ranges",
@@ -56,6 +57,58 @@
     "snapshot_delta": {
       "type": "object",
       "additionalProperties": true
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "canonical_data_sha256",
+        "change_manifest_sha256",
+        "change_manifest_path",
+        "change_manifest_url",
+        "source_git"
+      ],
+      "properties": {
+        "canonical_data_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "change_manifest_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "change_manifest_path": {
+          "type": "string",
+          "pattern": "^data/history/snapshots/[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-f0-9]{12}/change_manifest\\.json$"
+        },
+        "change_manifest_url": {
+          "type": "string",
+          "pattern": "^/scientific-resources/snapshots/[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-f0-9]{12}/change_manifest\\.json$"
+        },
+        "source_git": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "source_repository",
+            "commit",
+            "path"
+          ],
+          "properties": {
+            "source_repository": {
+              "type": "string",
+              "format": "uri",
+              "pattern": "^https://"
+            },
+            "commit": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{40}$"
+            },
+            "path": {
+              "const": "data/opportunities.json"
+            }
+          }
+        }
+      }
     },
     "coverage": {
       "type": "object",

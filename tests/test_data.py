@@ -8,7 +8,7 @@ from collections import Counter
 from datetime import date, datetime
 from urllib.parse import urlsplit
 
-from helpers import DATA_PATH, HISTORY, SCHEMA_PATH, load_json, sha256_path
+from helpers import DATA_PATH, FUNDING_PULSE_SCHEMA_PATH, HISTORY, ROOT, SCHEMA_PATH, load_json, sha256_path
 
 sys.path.insert(0, str(DATA_PATH.parents[1] / "src"))
 import generate  # noqa: E402
@@ -119,6 +119,7 @@ class PublicDataTests(unittest.TestCase):
         cls.schema = load_json(SCHEMA_PATH)
         cls.records = cls.data["opportunities"]
         cls.history_index = load_json(HISTORY / "index.json")
+        cls.funding_pulse_schema = load_json(FUNDING_PULSE_SCHEMA_PATH)
         cls.current_snapshot_id = cls.history_index["current_snapshot_id"]
         cls.current_summary = next(
             item for item in cls.history_index["snapshots"] if item["snapshot_id"] == cls.current_snapshot_id
@@ -146,6 +147,30 @@ class PublicDataTests(unittest.TestCase):
             sha256_path(DATA_PATH.parent / "history" / "snapshots" / ORIGINAL_ID / "public_opportunities.json"),
             EXPECTED_ORIGINAL_SHA256,
         )
+
+    def test_every_source_git_claim_reproduces_canonical_snapshot_bytes(self):
+        for item in self.history_index["snapshots"]:
+            if item["source"]["kind"] != "source-git":
+                continue
+            with self.subTest(snapshot_id=item["snapshot_id"]):
+                source_bytes = generate.git_show_file_bytes(
+                    item["source"]["commit"],
+                    item["source"]["path"],
+                    repo_root=ROOT,
+                )
+                self.assertEqual(generate.sha256_bytes(source_bytes), item["canonical_data_sha256"])
+
+    def test_current_funding_pulse_provenance_is_schema_valid_and_cycle_free(self):
+        pulse_path = HISTORY / "snapshots" / self.current_snapshot_id / "funding_pulse.json"
+        pulse = load_json(pulse_path)
+        assert_schema(pulse, self.funding_pulse_schema, self.funding_pulse_schema)
+        provenance = pulse["provenance"]
+        manifest_path = HISTORY / "snapshots" / self.current_snapshot_id / "change_manifest.json"
+        self.assertEqual(provenance["canonical_data_sha256"], self.current_summary["canonical_data_sha256"])
+        self.assertEqual(provenance["change_manifest_sha256"], sha256_path(manifest_path))
+        self.assertEqual(provenance["change_manifest_path"], f"data/history/snapshots/{self.current_snapshot_id}/change_manifest.json")
+        self.assertEqual(provenance["source_git"]["commit"], "cdba70e30101914386650c166cd63e8dd4ad7c2f")
+        self.assertNotIn("funding_pulse_sha256", provenance)
 
     def test_record_and_status_counts(self):
         observed = Counter(record["status"] for record in self.records)

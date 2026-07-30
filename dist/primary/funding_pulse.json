@@ -43,6 +43,17 @@
     "baseline_available": false,
     "baseline_reason": "previous_snapshot_has_no_funding_pulse"
   },
+  "provenance": {
+    "canonical_data_sha256": "75e1e5c549574cd2593e9e55b9de89b9145a797a91c8ce7badd1f9f56aea88c6",
+    "change_manifest_sha256": "d388eaf6ed93f27e81ca6b72300048fc158d14903fdc11c4823486e8a31ff1a2",
+    "change_manifest_path": "data/history/snapshots/2026-07-30-75e1e5c54957/change_manifest.json",
+    "change_manifest_url": "/scientific-resources/snapshots/2026-07-30-75e1e5c54957/change_manifest.json",
+    "source_git": {
+      "source_repository": "https://github.com/earth-space-ai/scientific-resources",
+      "commit": "cdba70e30101914386650c166cd63e8dd4ad7c2f",
+      "path": "data/opportunities.json"
+    }
+  },
   "coverage": {
     "records_total": 70,
     "current_records": 53,

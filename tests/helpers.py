@@ -10,6 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 DATA_PATH = ROOT / "data" / "opportunities.json"
 SCHEMA_PATH = ROOT / "data" / "schema.json"
+FUNDING_PULSE_SCHEMA_PATH = ROOT / "data" / "funding_pulse.schema.json"
 PROFILES_PATH = ROOT / "src" / "site_profiles.json"
 DIST = ROOT / "dist"
 HISTORY = ROOT / "data" / "history"

@@ -63,6 +63,38 @@ Each host output includes `provenance.json`. The generator records:
 
 No build clock time, machine name, absolute path, environment capture, or network result is included. Therefore an unchanged input tree produces byte-identical manifests.
 
+## Provenance-only C1/C2 custody correction
+
+Use this path only to repair metadata for an already released immutable snapshot whose `public_opportunities.json` and `change_manifest.json` bytes are correct but whose `source-git` custody pointer is wrong.
+
+1. Start from clean custody commit C1. Confirm `data/opportunities.json` byte-matches the current history snapshot and that the intended source commit contains the exact released bytes:
+
+   ```sh
+   git diff --quiet
+   git show <C1>:data/opportunities.json | shasum -a 256
+   shasum -a 256 data/opportunities.json
+   ```
+
+2. Run the explicit provenance-only finalizer for each bounded snapshot repair:
+
+   ```sh
+   python3 src/record_snapshot.py \
+     --finalize-provenance-only \
+     --snapshot-id <snapshot-id> \
+     --source-commit <custody-commit>
+   ```
+
+   The finalizer reads `git show <custody-commit>:data/opportunities.json`, requires that byte hash to equal the existing snapshot's `canonical_data_sha256`, refuses to alter immutable `public_opportunities.json` or `change_manifest.json`, updates only index/Pulse provenance metadata, and regenerates the current Funding Pulse sidecar when the repaired snapshot is current.
+
+3. Regenerate downstream artifacts and validate:
+
+   ```sh
+   python3 src/generate.py
+   python3 -m unittest discover -s tests -v
+   ```
+
+4. Review the uncommitted C2 diff. C2 must contain only the provenance/source-custody repair, generator/recorder/test/doc guardrails, and regenerated downstream artifacts. Do not rewrite C1 and do not use this path for factual data edits; factual changes still require a new append-only snapshot.
+
 ## Exact owner-controlled checkout synchronization
 
 The host wiring and the reviewed static-file copy are deliberately separate operations.

@@ -13,6 +13,7 @@ import hashlib
 import html
 import json
 import re
+import subprocess
 from collections import Counter
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -124,6 +125,99 @@ def sha256_bytes(value: bytes) -> str:
     return hashlib.sha256(value).hexdigest()
 
 
+def project_root() -> Path:
+    return Path(__file__).resolve().parents[1]
+
+
+def git_show_file_bytes(commit: str, path: str, *, repo_root: Path | None = None) -> bytes:
+    if not re.fullmatch(r"[a-f0-9]{40}", commit):
+        raise ValueError("source-git commit must be a full 40-character lowercase SHA")
+    if path != "data/opportunities.json":
+        raise ValueError("source-git path must be data/opportunities.json")
+    root = repo_root or project_root()
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(root), "show", f"{commit}:{path}"],
+            check=False,
+            capture_output=True,
+            timeout=30,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        raise ValueError("could not read source-git object") from exc
+    if result.returncode != 0:
+        message = result.stderr.decode("utf-8", errors="replace").strip()
+        raise ValueError(message or "could not read source-git object")
+    return result.stdout
+
+
+def validate_source_custody(summary: dict, *, repo_root: Path | None = None) -> None:
+    source = summary["source"]
+    if source.get("kind") != "source-git":
+        return
+    if set(source) != {"kind", "commit", "path"}:
+        raise ValueError("source-git custody has an unexpected shape")
+    source_bytes = git_show_file_bytes(source["commit"], source["path"], repo_root=repo_root)
+    if sha256_bytes(source_bytes) != summary["canonical_data_sha256"]:
+        raise ValueError(f"source-git custody hash mismatch: {summary['snapshot_id']}")
+
+
+def validate_funding_pulse_sidecar(
+    *,
+    history_dir: Path,
+    summary: dict,
+    data: dict,
+    manifest: dict,
+    manifest_bytes: bytes,
+    source_repository: str,
+) -> None:
+    pulse_fields = {"funding_pulse_summary", "funding_pulse_url", "funding_pulse_sha256"}
+    present = pulse_fields & set(summary)
+    if not present:
+        return
+    if present != pulse_fields:
+        raise ValueError(f"funding pulse index fields are incomplete: {summary['snapshot_id']}")
+    snapshot_id = summary["snapshot_id"]
+    pulse_path = history_dir / "snapshots" / snapshot_id / "funding_pulse.json"
+    if not pulse_path.is_file():
+        raise ValueError(f"funding pulse sidecar is missing: {snapshot_id}")
+    pulse_bytes = pulse_path.read_bytes()
+    pulse_sha = sha256_bytes(pulse_bytes)
+    if pulse_sha != summary["funding_pulse_sha256"]:
+        raise ValueError(f"funding pulse hash mismatch: {snapshot_id}")
+    if summary["funding_pulse_sha256"].encode("ascii") in pulse_bytes:
+        raise ValueError(f"funding pulse must not contain its own SHA: {snapshot_id}")
+    pulse = json.loads(pulse_bytes.decode("utf-8"))
+    if pulse.get("snapshot_id") != snapshot_id:
+        raise ValueError(f"funding pulse snapshot mismatch: {snapshot_id}")
+    if funding_pulse_summary(pulse) != summary["funding_pulse_summary"]:
+        raise ValueError(f"funding pulse summary mismatch: {snapshot_id}")
+
+    provenance = pulse.get("provenance")
+    if not isinstance(provenance, dict):
+        raise ValueError(f"funding pulse provenance is missing: {snapshot_id}")
+    expected_manifest_path = f"data/history/snapshots/{snapshot_id}/change_manifest.json"
+    expected_manifest_url = f"{HISTORY_ROOT_RELATIVE}/{snapshot_id}/change_manifest.json"
+    if provenance.get("canonical_data_sha256") != summary["canonical_data_sha256"]:
+        raise ValueError(f"funding pulse provenance data SHA mismatch: {snapshot_id}")
+    if provenance.get("change_manifest_sha256") != sha256_bytes(manifest_bytes):
+        raise ValueError(f"funding pulse provenance manifest SHA mismatch: {snapshot_id}")
+    if provenance.get("change_manifest_path") != expected_manifest_path:
+        raise ValueError(f"funding pulse provenance manifest path mismatch: {snapshot_id}")
+    if provenance.get("change_manifest_url") != expected_manifest_url:
+        raise ValueError(f"funding pulse provenance manifest URL mismatch: {snapshot_id}")
+    source_git = provenance.get("source_git")
+    if not isinstance(source_git, dict):
+        raise ValueError(f"funding pulse provenance source-git is missing: {snapshot_id}")
+    if source_git.get("source_repository") != source_repository:
+        raise ValueError(f"funding pulse provenance source repository mismatch: {snapshot_id}")
+    if source_git.get("commit") != summary["source"].get("commit"):
+        raise ValueError(f"funding pulse provenance source commit mismatch: {snapshot_id}")
+    if source_git.get("path") != summary["source"].get("path"):
+        raise ValueError(f"funding pulse provenance source path mismatch: {snapshot_id}")
+    if "funding_pulse_sha256" in json.dumps(provenance, ensure_ascii=False):
+        raise ValueError(f"funding pulse provenance must not contain a pulse self-hash field: {snapshot_id}")
+
+
 def parse_date(value: str, label: str) -> date:
     try:
         return date.fromisoformat(value)
@@ -226,6 +320,7 @@ def build_funding_pulse(
     manifest: dict | None = None,
     *,
     snapshot_id: str | None = None,
+    provenance: dict | None = None,
     baseline_available: bool = False,
     baseline_reason: str | None = "previous_snapshot_has_no_funding_pulse",
 ) -> dict:
@@ -252,6 +347,7 @@ def build_funding_pulse(
             "baseline_available": baseline_available,
             "baseline_reason": None if baseline_available else baseline_reason,
         },
+        "provenance": provenance,
         "coverage": {
             "records_total": len(records),
             "current_records": len(active_records),
@@ -854,7 +950,13 @@ def diff_snapshots(previous: dict | None, current: dict, snapshot_id: str) -> di
     }
 
 
-def load_history(history_dir: Path) -> tuple[dict, dict[str, tuple[dict, bytes, dict]]]:
+def load_history(
+    history_dir: Path,
+    *,
+    check_source_custody: bool = True,
+    check_funding_pulse: bool = True,
+    repo_root: Path | None = None,
+) -> tuple[dict, dict[str, tuple[dict, bytes, dict]]]:
     index_path = history_dir / "index.json"
     index = json.loads(index_path.read_text(encoding="utf-8"))
     validate_history_index(index)
@@ -876,8 +978,20 @@ def load_history(history_dir: Path) -> tuple[dict, dict[str, tuple[dict, bytes, 
             raise ValueError(f"history snapshot hash mismatch: {snapshot_id}")
         if stable_id_sha256(data["opportunities"]) != item["stable_id_sha256"]:
             raise ValueError(f"history stable-ID hash mismatch: {snapshot_id}")
-        manifest = json.loads((snapshot_dir / "change_manifest.json").read_text(encoding="utf-8"))
+        manifest_bytes = (snapshot_dir / "change_manifest.json").read_bytes()
+        manifest = json.loads(manifest_bytes.decode("utf-8"))
         validate_change_manifest(manifest, item, data)
+        if check_source_custody:
+            validate_source_custody(item, repo_root=repo_root)
+        if check_funding_pulse:
+            validate_funding_pulse_sidecar(
+                history_dir=history_dir,
+                summary=item,
+                data=data,
+                manifest=manifest,
+                manifest_bytes=manifest_bytes,
+                source_repository=index["generated_from"]["source_repository"],
+            )
         snapshots[snapshot_id] = (data, data_bytes, manifest)
     return index, snapshots
 

@@ -62,18 +62,77 @@ def sort_snapshots(items: list[dict]) -> list[dict]:
     )
 
 
+def atomic_write(path: Path, payload: bytes) -> None:
+    tmp_path = path.with_name(path.name + ".tmp")
+    tmp_path.write_bytes(payload)
+    tmp_path.replace(path)
+
+
+def pulse_provenance(
+    *,
+    data_sha: str,
+    manifest_sha: str,
+    snapshot_id: str,
+    source: dict,
+    source_repository_url: str,
+) -> dict:
+    return {
+        "canonical_data_sha256": data_sha,
+        "change_manifest_sha256": manifest_sha,
+        "change_manifest_path": f"data/history/snapshots/{snapshot_id}/change_manifest.json",
+        "change_manifest_url": f"{generate.HISTORY_ROOT_RELATIVE}/{snapshot_id}/change_manifest.json",
+        "source_git": {
+            "source_repository": source_repository_url,
+            "commit": source["commit"],
+            "path": source["path"],
+        },
+    }
+
+
+def build_snapshot_pulse(
+    *,
+    history_dir: Path,
+    index: dict,
+    data: dict,
+    data_sha: str,
+    manifest: dict,
+    snapshot_id: str,
+    source: dict,
+) -> dict:
+    manifest_bytes = generate.canonical_json_bytes(manifest)
+    previous_snapshot_id = manifest["previous_snapshot_id"]
+    previous_pulse_path = history_dir / "snapshots" / previous_snapshot_id / "funding_pulse.json" if previous_snapshot_id else None
+    baseline_available = bool(previous_pulse_path and previous_pulse_path.exists())
+    provenance = pulse_provenance(
+        data_sha=data_sha,
+        manifest_sha=generate.sha256_bytes(manifest_bytes),
+        snapshot_id=snapshot_id,
+        source=source,
+        source_repository_url=index["generated_from"]["source_repository"],
+    )
+    return generate.build_funding_pulse(
+        data,
+        manifest,
+        snapshot_id=snapshot_id,
+        provenance=provenance,
+        baseline_available=baseline_available,
+        baseline_reason=None if baseline_available else "previous_snapshot_has_no_funding_pulse",
+    )
+
+
 def record_snapshot(
     *,
     data_path: Path,
     history_dir: Path,
     source_commit: str,
+    source_repo_root: Path | None = None,
     expected_page_date: str | None = None,
 ) -> str:
     data, data_bytes, data_sha = load_current(data_path)
     if expected_page_date and data["page_date"] != expected_page_date:
         raise RecorderError(f"expected page_date {expected_page_date}, found {data['page_date']}")
 
-    index, _snapshots = generate.load_history(history_dir)
+    index, _snapshots = generate.load_history(history_dir, repo_root=source_repo_root)
     previous = newest_snapshot_data(history_dir, index)
     snapshot_id = generate.snapshot_id_for(data_sha, data["page_date"])
     generate.validate_snapshot_id(snapshot_id)
@@ -87,15 +146,19 @@ def record_snapshot(
         "path": "data/opportunities.json",
     }
     manifest = generate.diff_snapshots(previous, data, snapshot_id)
+    source_bytes = generate.git_show_file_bytes(source_commit, source["path"], repo_root=source_repo_root)
+    if generate.sha256_bytes(source_bytes) != data_sha:
+        raise RecorderError("source-git commit does not reproduce canonical data bytes")
     manifest["previous_snapshot_id"] = index["snapshots"][0]["snapshot_id"]
     manifest["previous_data_sha256"] = index["snapshots"][0]["canonical_data_sha256"]
-    previous_pulse_path = history_dir / "snapshots" / index["snapshots"][0]["snapshot_id"] / "funding_pulse.json"
-    pulse = generate.build_funding_pulse(
-        data,
-        manifest,
+    pulse = build_snapshot_pulse(
+        history_dir=history_dir,
+        index=index,
+        data=data,
+        data_sha=data_sha,
+        manifest=manifest,
         snapshot_id=snapshot_id,
-        baseline_available=previous_pulse_path.exists(),
-        baseline_reason=None if previous_pulse_path.exists() else "previous_snapshot_has_no_funding_pulse",
+        source=source,
     )
     summary = generate.summarize_snapshot(data, data_sha, source, pulse)
 
@@ -112,6 +175,80 @@ def record_snapshot(
     index["generated_from"]["build_spec_version"] = generate.BUILD_SPEC_VERSION
     index["schema_version"] = generate.SNAPSHOT_INDEX_VERSION
     (history_dir / "index.json").write_bytes(generate.canonical_json_bytes(index))
+    generate.load_history(history_dir, repo_root=source_repo_root)
+    return snapshot_id
+
+
+def finalize_snapshot_provenance(
+    *,
+    history_dir: Path,
+    snapshot_id: str,
+    source_commit: str,
+    source_repo_root: Path | None = None,
+) -> str:
+    index, snapshots = generate.load_history(
+        history_dir,
+        check_source_custody=False,
+        check_funding_pulse=False,
+        repo_root=source_repo_root,
+    )
+    summary = next((item for item in index["snapshots"] if item["snapshot_id"] == snapshot_id), None)
+    if summary is None:
+        raise RecorderError(f"snapshot not found: {snapshot_id}")
+    source = {"kind": "source-git", "commit": source_commit, "path": "data/opportunities.json"}
+    source_bytes = generate.git_show_file_bytes(source_commit, source["path"], repo_root=source_repo_root)
+    if generate.sha256_bytes(source_bytes) != summary["canonical_data_sha256"]:
+        raise RecorderError("source-git commit does not reproduce the existing snapshot bytes")
+
+    snapshot_dir = history_dir / "snapshots" / snapshot_id
+    data_path = snapshot_dir / "public_opportunities.json"
+    manifest_path = snapshot_dir / "change_manifest.json"
+    before_data = data_path.read_bytes()
+    before_manifest = manifest_path.read_bytes()
+    data, _data_bytes, manifest = snapshots[snapshot_id]
+    if generate.sha256_bytes(before_data) != summary["canonical_data_sha256"]:
+        raise RecorderError("existing snapshot data hash does not match index summary")
+
+    index_path = history_dir / "index.json"
+    before_index = index_path.read_bytes()
+    pulse_path = snapshot_dir / "funding_pulse.json"
+    before_pulse = pulse_path.read_bytes() if pulse_path.exists() else None
+    summary["source"] = source
+    pulse_bytes = None
+    if snapshot_id == index["current_snapshot_id"]:
+        pulse = build_snapshot_pulse(
+            history_dir=history_dir,
+            index=index,
+            data=data,
+            data_sha=summary["canonical_data_sha256"],
+            manifest=manifest,
+            snapshot_id=snapshot_id,
+            source=source,
+        )
+        pulse_bytes = generate.canonical_json_bytes(pulse)
+        summary["funding_pulse_summary"] = generate.funding_pulse_summary(pulse)
+        summary["funding_pulse_sha256"] = generate.sha256_bytes(pulse_bytes)
+        index["generated_from"]["source_commit"] = source_commit
+        index["generated_from"]["build_spec_version"] = generate.BUILD_SPEC_VERSION
+
+    if data_path.read_bytes() != before_data:
+        raise RecorderError("provenance finalization attempted to alter immutable snapshot data")
+    if manifest_path.read_bytes() != before_manifest:
+        raise RecorderError("provenance finalization attempted to alter immutable change manifest")
+    index_bytes = generate.canonical_json_bytes(index)
+    try:
+        if pulse_bytes is not None:
+            atomic_write(pulse_path, pulse_bytes)
+        atomic_write(index_path, index_bytes)
+        generate.validate_source_custody(summary, repo_root=source_repo_root)
+        generate.load_history(history_dir, repo_root=source_repo_root)
+    except Exception:
+        if before_pulse is not None:
+            atomic_write(pulse_path, before_pulse)
+        elif pulse_path.exists():
+            pulse_path.unlink()
+        atomic_write(index_path, before_index)
+        raise
     return snapshot_id
 
 
@@ -130,6 +267,12 @@ def parse_args(arguments: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="optional safety check, for example 2026-07-29 for the next reviewed snapshot",
     )
+    parser.add_argument(
+        "--finalize-provenance-only",
+        action="store_true",
+        help="repair source-git provenance for an existing immutable snapshot after proving custody",
+    )
+    parser.add_argument("--snapshot-id", default=None, help="existing snapshot ID for --finalize-provenance-only")
     return parser.parse_args(arguments)
 
 
@@ -138,16 +281,26 @@ def main(arguments: list[str] | None = None) -> int:
     project_root = Path(__file__).resolve().parents[1]
     try:
         source_commit = args.source_commit or git_head(project_root)
-        snapshot_id = record_snapshot(
-            data_path=args.data,
-            history_dir=args.history_dir,
-            source_commit=source_commit,
-            expected_page_date=args.expected_page_date,
-        )
+        if args.finalize_provenance_only:
+            if not args.snapshot_id:
+                raise RecorderError("--snapshot-id is required with --finalize-provenance-only")
+            snapshot_id = finalize_snapshot_provenance(
+                history_dir=args.history_dir,
+                snapshot_id=args.snapshot_id,
+                source_commit=source_commit,
+            )
+        else:
+            snapshot_id = record_snapshot(
+                data_path=args.data,
+                history_dir=args.history_dir,
+                source_commit=source_commit,
+                expected_page_date=args.expected_page_date,
+            )
     except (RecorderError, ValueError, json.JSONDecodeError) as exc:
         print(f"snapshot rejected: {exc}", file=sys.stderr)
         return 2
-    print(f"recorded snapshot {snapshot_id}")
+    verb = "finalized provenance for" if args.finalize_provenance_only else "recorded snapshot"
+    print(f"{verb} {snapshot_id}")
     return 0
 
 

@@ -20,18 +20,18 @@
   },
   "build_inputs": {
     "data/schema.json": "45d8e2f4eaeaaa265a4deb3568d590e7d06c0f6ef05e1e6678e969e8188b185c",
-    "src/generate.py": "7235f84481d5eec1ef94ba34e1454a574aeaf5542fd5abc9cee7fdce988d94bb",
+    "src/generate.py": "3220643125528115296a306b7f970993bac7674c769c15b7cf311f9e01da1123",
     "src/site_profiles.json": "31ae8ab8aeb90d43e59619e27cfc491fa0c5839c217ea03ad855c03c81e59881",
     "src/template.html": "888772c2ffd4119e136716bbaba88b9b17e061b73f2893e9b93a5145d588db57"
   },
   "outputs": {
     "index.html": "4728615a3cce0d49592fabb0cf19c4bdd97b385631424a13a33d8ca1ec5d8d6c",
     "public_opportunities.json": "75e1e5c549574cd2593e9e55b9de89b9145a797a91c8ce7badd1f9f56aea88c6",
-    "funding_pulse.json": "9cb34f0d356711f02aa0b998fea6ece8f4ddb1daabe190d69409a1a6d366563e",
-    "snapshots/index.json": "b055adea7cb9d89687f8fb057a1c9a9375d4dca8bb052a2e668552540dc6d204",
+    "funding_pulse.json": "bfbde997fba18831a5dd8327985d9efc801e10e180cc5622b6b3c260d9f14f1c",
+    "snapshots/index.json": "fc564be1329b42983b2b19fb744622cb6d5df6f29ca7ec93b8bcecc459fb6430",
     "snapshots/2026-07-30-75e1e5c54957/public_opportunities.json": "75e1e5c549574cd2593e9e55b9de89b9145a797a91c8ce7badd1f9f56aea88c6",
     "snapshots/2026-07-30-75e1e5c54957/change_manifest.json": "d388eaf6ed93f27e81ca6b72300048fc158d14903fdc11c4823486e8a31ff1a2",
-    "snapshots/2026-07-30-75e1e5c54957/funding_pulse.json": "9cb34f0d356711f02aa0b998fea6ece8f4ddb1daabe190d69409a1a6d366563e",
+    "snapshots/2026-07-30-75e1e5c54957/funding_pulse.json": "bfbde997fba18831a5dd8327985d9efc801e10e180cc5622b6b3c260d9f14f1c",
     "snapshots/2026-07-29-eda96fe0f7bd/public_opportunities.json": "eda96fe0f7bdf3e462fe5ed4e2097b46ed0b9197a941960b61e32e80b71b312d",
     "snapshots/2026-07-29-eda96fe0f7bd/change_manifest.json": "c640c4940dd1f1cab391edc44c56515d8371feb53e5cb357ee451dda5a8c23e7",
     "snapshots/2026-07-29-b129c990e65b/public_opportunities.json": "b129c990e65b90848743a12253fb63e5470eaa0325e501b9815bf2093b9dabcf",

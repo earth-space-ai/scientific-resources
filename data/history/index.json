@@ -4,7 +4,7 @@
   "current_snapshot_id": "2026-07-30-75e1e5c54957",
   "generated_from": {
     "source_repository": "https://github.com/earth-space-ai/scientific-resources",
-    "source_commit": "e4d956b54a6a73f8a4a75dcf14cb41d24c18bfde",
+    "source_commit": "cdba70e30101914386650c166cd63e8dd4ad7c2f",
     "build_spec_version": "1.1.0"
   },
   "snapshots": [
@@ -25,7 +25,7 @@
       "change_manifest_url": "/scientific-resources/snapshots/2026-07-30-75e1e5c54957/change_manifest.json",
       "source": {
         "kind": "source-git",
-        "commit": "e4d956b54a6a73f8a4a75dcf14cb41d24c18bfde",
+        "commit": "cdba70e30101914386650c166cd63e8dd4ad7c2f",
         "path": "data/opportunities.json"
       },
       "schema_version": "1.1.0",
@@ -59,7 +59,7 @@
         "unquantified_current_records": 45
       },
       "funding_pulse_url": "/scientific-resources/snapshots/2026-07-30-75e1e5c54957/funding_pulse.json",
-      "funding_pulse_sha256": "9cb34f0d356711f02aa0b998fea6ece8f4ddb1daabe190d69409a1a6d366563e"
+      "funding_pulse_sha256": "bfbde997fba18831a5dd8327985d9efc801e10e180cc5622b6b3c260d9f14f1c"
     },
     {
       "snapshot_id": "2026-07-29-eda96fe0f7bd",
@@ -99,7 +99,7 @@
       "change_manifest_url": "/scientific-resources/snapshots/2026-07-29-b129c990e65b/change_manifest.json",
       "source": {
         "kind": "source-git",
-        "commit": "9c4da8bdbf03801ed7c9700bbabbb8b339d1e56c",
+        "commit": "30ec14aa0dfb0ae941820fca0d272f0a5aed0ab9",
         "path": "data/opportunities.json"
       }
     },
@@ -120,7 +120,7 @@
       "change_manifest_url": "/scientific-resources/snapshots/2026-07-29-cfe70c851e31/change_manifest.json",
       "source": {
         "kind": "source-git",
-        "commit": "273aff24dd1ec6474bac4edfa1eb4c30d517b6fa",
+        "commit": "9c4da8bdbf03801ed7c9700bbabbb8b339d1e56c",
         "path": "data/opportunities.json"
       }
     },
@@ -141,7 +141,7 @@
       "change_manifest_url": "/scientific-resources/snapshots/2026-07-29-9a003fb345f9/change_manifest.json",
       "source": {
         "kind": "source-git",
-        "commit": "28e802bf4df2a7653a790e0546e99a838c850dab",
+        "commit": "273aff24dd1ec6474bac4edfa1eb4c30d517b6fa",
         "path": "data/opportunities.json"
       }
     },

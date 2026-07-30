@@ -45,6 +45,62 @@ def copy_original_only_history(target: Path) -> None:
             shutil.rmtree(path)
 
 
+def make_local_source_clone(target: Path) -> Path:
+    source_root = target / "source-clone"
+    subprocess.run(
+        ["git", "clone", "--no-hardlinks", str(ROOT), str(source_root)],
+        cwd=target,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    return source_root
+
+
+def commit_candidate_data(source_root: Path, data_bytes: bytes) -> str:
+    (source_root / "data" / "opportunities.json").write_bytes(data_bytes)
+    subprocess.run(["git", "add", "data/opportunities.json"], cwd=source_root, check=True, capture_output=True, text=True, timeout=30)
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=Custody Test",
+            "-c",
+            "user.email=custody@example.invalid",
+            "commit",
+            "-m",
+            "custody fixture",
+        ],
+        cwd=source_root,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    result = subprocess.run(["git", "rev-parse", "HEAD"], cwd=source_root, check=True, capture_output=True, text=True, timeout=30)
+    return result.stdout.strip()
+
+
+def candidate_with_added_record(current: dict) -> dict:
+    payload = json.loads(json.dumps(current))
+    fixture_date = max(record["first_seen"] for record in payload["opportunities"])
+    fixture_timestamp = f"{fixture_date}T12:00:00Z"
+    payload["page_date"] = fixture_date
+    payload["verified_at"] = fixture_timestamp
+    for record in payload["opportunities"]:
+        record["verified_at"] = fixture_timestamp
+        record["verified_date"] = fixture_date
+        record["last_verified"] = fixture_date
+    new_record = json.loads(json.dumps(payload["opportunities"][0]))
+    new_record["id"] = "example-cycle-safe-resource-9999"
+    new_record["program"] = "Example Cycle-Safe Resource 9999"
+    new_record["first_seen"] = payload["page_date"]
+    payload["opportunities"].append(new_record)
+    refresh(payload)
+    return payload
+
+
 class TimeMachineTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -146,7 +202,7 @@ class TimeMachineTests(unittest.TestCase):
         first_change = manifest["changes"][0]
         self.assertNotEqual(first_change["previous_record_sha256"], first_change["current_record_sha256"])
 
-    def test_history_validation_allows_two_snapshots_with_different_counts(self):
+    def test_recorder_rejects_uncommitted_candidate_data_without_matching_custody(self):
         scratch = ROOT / ".test-work"
         scratch.mkdir(exist_ok=True)
         with tempfile.TemporaryDirectory(dir=scratch) as temp:
@@ -154,31 +210,133 @@ class TimeMachineTests(unittest.TestCase):
             history = temp_root / "history"
             shutil.copytree(HISTORY, history)
             data = temp_root / "opportunities.json"
-            payload = json.loads(json.dumps(self.current))
-            fixture_date = max(record["first_seen"] for record in payload["opportunities"])
-            fixture_timestamp = f"{fixture_date}T12:00:00Z"
-            payload["page_date"] = fixture_date
-            payload["verified_at"] = fixture_timestamp
-            for record in payload["opportunities"]:
-                record["verified_at"] = fixture_timestamp
-                record["verified_date"] = fixture_date
-                record["last_verified"] = fixture_date
-            new_record = json.loads(json.dumps(payload["opportunities"][0]))
-            new_record["id"] = "example-cycle-safe-resource-9999"
-            new_record["program"] = "Example Cycle-Safe Resource 9999"
-            new_record["first_seen"] = payload["page_date"]
-            payload["opportunities"].append(new_record)
-            refresh(payload)
+            payload = candidate_with_added_record(self.current)
             data.write_bytes(generate.canonical_json_bytes(payload))
-            record_snapshot.record_snapshot(
+            with self.assertRaisesRegex(record_snapshot.RecorderError, "does not reproduce canonical data"):
+                record_snapshot.record_snapshot(
+                    data_path=data,
+                    history_dir=history,
+                    source_commit="28e802bf4df2a7653a790e0546e99a838c850dab",
+                )
+        try:
+            scratch.rmdir()
+        except OSError:
+            pass
+
+    def test_recorder_appends_committed_candidate_data_with_real_custody(self):
+        scratch = ROOT / ".test-work"
+        scratch.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=scratch) as temp:
+            temp_root = Path(temp)
+            history = temp_root / "history"
+            shutil.copytree(HISTORY, history)
+            before_original = (history / "snapshots" / ORIGINAL_ID / "public_opportunities.json").read_bytes()
+            before_current = (history / "snapshots" / self.index["current_snapshot_id"] / "public_opportunities.json").read_bytes()
+            data = temp_root / "opportunities.json"
+            payload = candidate_with_added_record(self.current)
+            data.write_bytes(generate.canonical_json_bytes(payload))
+            source_root = make_local_source_clone(temp_root)
+            source_commit = commit_candidate_data(source_root, data.read_bytes())
+
+            snapshot_id = record_snapshot.record_snapshot(
                 data_path=data,
                 history_dir=history,
-                source_commit="28e802bf4df2a7653a790e0546e99a838c850dab",
+                source_commit=source_commit,
+                source_repo_root=source_root,
             )
-            index, snapshots = generate.load_history(history)
+            index, snapshots = generate.load_history(history, repo_root=source_root)
+            self.assertEqual(index["current_snapshot_id"], snapshot_id)
+            self.assertEqual(index["snapshots"][0]["source"]["commit"], source_commit)
             self.assertEqual(index["snapshots"][0]["record_count"], len(self.current["opportunities"]) + 1)
-            self.assertEqual(index["snapshots"][-1]["record_count"], 32)
             self.assertEqual(len(snapshots), len(self.index["snapshots"]) + 1)
+            pulse = load_json(history / "snapshots" / snapshot_id / "funding_pulse.json")
+            self.assertEqual(pulse["provenance"]["source_git"]["commit"], source_commit)
+            self.assertEqual(pulse["provenance"]["canonical_data_sha256"], index["snapshots"][0]["canonical_data_sha256"])
+            self.assertEqual((history / "snapshots" / ORIGINAL_ID / "public_opportunities.json").read_bytes(), before_original)
+            self.assertEqual((history / "snapshots" / self.index["current_snapshot_id"] / "public_opportunities.json").read_bytes(), before_current)
+        try:
+            scratch.rmdir()
+        except OSError:
+            pass
+
+    def test_load_history_rejects_tampered_pulse_provenance(self):
+        scratch = ROOT / ".test-work"
+        scratch.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=scratch) as temp:
+            temp_root = Path(temp)
+            history = temp_root / "history"
+            shutil.copytree(HISTORY, history)
+            snapshot_id = self.index["current_snapshot_id"]
+            pulse_path = history / "snapshots" / snapshot_id / "funding_pulse.json"
+            pulse = load_json(pulse_path)
+            pulse["provenance"]["source_git"]["commit"] = "0" * 40
+            pulse_path.write_bytes(generate.canonical_json_bytes(pulse))
+            index = load_json(history / "index.json")
+            index["snapshots"][0]["funding_pulse_sha256"] = sha256_path(pulse_path)
+            (history / "index.json").write_bytes(generate.canonical_json_bytes(index))
+            with self.assertRaisesRegex(ValueError, "funding pulse provenance source commit mismatch"):
+                generate.load_history(history)
+        try:
+            scratch.rmdir()
+        except OSError:
+            pass
+
+    def test_generation_rejects_tampered_pulse_bytes_without_index_hash_update(self):
+        scratch = ROOT / ".test-work"
+        scratch.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=scratch) as temp:
+            temp_root = Path(temp)
+            history = temp_root / "history"
+            shutil.copytree(HISTORY, history)
+            snapshot_id = self.index["current_snapshot_id"]
+            pulse_path = history / "snapshots" / snapshot_id / "funding_pulse.json"
+            pulse = load_json(pulse_path)
+            pulse["warnings"].append("Tampered warning.")
+            pulse_path.write_bytes(generate.canonical_json_bytes(pulse))
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "src" / "generate.py"),
+                    "--data",
+                    str(DATA_PATH),
+                    "--history-dir",
+                    str(history),
+                    "--output",
+                    str(temp_root / "dist"),
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            self.assertNotEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+            self.assertIn("funding pulse hash mismatch", result.stderr)
+        try:
+            scratch.rmdir()
+        except OSError:
+            pass
+
+    def test_finalizer_rejects_wrong_custody_commit_without_metadata_writes(self):
+        scratch = ROOT / ".test-work"
+        scratch.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=scratch) as temp:
+            temp_root = Path(temp)
+            history = temp_root / "history"
+            shutil.copytree(HISTORY, history)
+            snapshot_id = self.index["current_snapshot_id"]
+            index_path = history / "index.json"
+            pulse_path = history / "snapshots" / snapshot_id / "funding_pulse.json"
+            before_index = index_path.read_bytes()
+            before_pulse = pulse_path.read_bytes()
+            with self.assertRaisesRegex(record_snapshot.RecorderError, "does not reproduce the existing snapshot bytes"):
+                record_snapshot.finalize_snapshot_provenance(
+                    history_dir=history,
+                    snapshot_id=snapshot_id,
+                    source_commit="e4d956b54a6a73f8a4a75dcf14cb41d24c18bfde",
+                )
+            self.assertEqual(index_path.read_bytes(), before_index)
+            self.assertEqual(pulse_path.read_bytes(), before_pulse)
         try:
             scratch.rmdir()
         except OSError:
