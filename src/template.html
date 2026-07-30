@@ -214,6 +214,7 @@ details p { font-size: .92rem; }
 .apply-link { border-color: var(--ink); background: var(--ink); color: white; }
 .apply-link:hover { background: var(--accent); color: white; }
 .all-sources .source-link { margin: .15rem .25rem .15rem 0; }
+.retirement { margin: .85rem 0; padding: .75rem; border-left: 3px solid var(--accent); background: var(--surface); color: var(--ink); }
 .verified { margin: 0; color: var(--muted); font: .67rem var(--mono); text-transform: uppercase; }
 .is-hidden { display: none !important; }
 .empty-state { padding: 1rem; border: 1px dashed var(--line); background: var(--surface); }
@@ -251,15 +252,15 @@ footer p { margin: 0; }
 <main id="main">
   <section class="hero wrap" aria-labelledby="page-title">
     <p class="eyebrow">Compute · credits · grants — public research resources</p>
-    <h1 id="page-title"><strong id="page-open-count">{{OPEN_COUNT}}</strong> programs were recorded as open in the reviewed snapshot.</h1>
+    <h1 id="page-title"><strong id="page-open-count">{{OPEN_COUNT}}</strong> programs remained open and actionable in the reviewed snapshot.</h1>
     <p class="lede">A static, official-source tracker for scientific compute allocations, API and cloud credits, and AI-for-science or open-science funding.</p>
     <ul class="summary-list" aria-label="Snapshot counts">
       <li><strong id="summary-total-count">{{TOTAL_COUNT}}</strong> total</li>
-      <li><strong id="summary-open-count">{{OPEN_COUNT}}</strong> open</li>
-      <li><strong id="summary-upcoming-count">{{UPCOMING_COUNT}}</strong> upcoming</li>
+      <li><strong id="summary-open-count">{{OPEN_COUNT}}</strong> actionable open</li>
+      <li><strong id="summary-upcoming-count">{{UPCOMING_COUNT}}</strong> actionable upcoming</li>
       <li><strong id="summary-closed-count">{{CLOSED_COUNT}}</strong> archived</li>
     </ul>
-    <p class="snapshot-note"><strong>Snapshot, not a live-status claim.</strong> Facts were reviewed for <time id="snapshot-date" datetime="{{PAGE_DATE}}">{{PAGE_DATE}}</time> in <span id="snapshot-timezone">{{TIMEZONE}}</span>. Statuses can change; confirm every detail on the linked official pages.</p>
+    <p class="snapshot-note"><strong>Snapshot, not a live-status claim.</strong> Facts were reviewed for <time id="snapshot-date" datetime="{{PAGE_DATE}}">{{PAGE_DATE}}</time> in <span id="snapshot-timezone">{{TIMEZONE}}</span>. A specific fixed-deadline cycle is archived when its verified applicant deadline is within 15 calendar days, even if sponsor intake is still open; confirm every detail on the linked official pages.</p>
   </section>
 
   <section class="controls" id="controls" aria-label="Opportunity filters" hidden>
@@ -311,8 +312,8 @@ footer p { margin: 0; }
     <p class="empty-state is-hidden" id="empty-state">No records match the current filter.</p>
 
     <details class="archive" id="archive">
-      <summary id="archive-summary">Archive — {{CLOSED_COUNT}} closed or past-cycle calls</summary>
-      <p class="archive-note">These records remain visible so that an evergreen or repurposed page is not mistaken for an open named call.</p>
+      <summary id="archive-summary">Archive — {{CLOSED_COUNT}} non-actionable records</summary>
+      <p class="archive-note">The archive includes sponsor-closed calls, past cycles, and specific cycles moved out of the actionable view by the inclusive 15-day lead-time policy. A policy-archived card preserves its official future deadline and visibly says when sponsor intake was still open.</p>
       <div class="card-grid" id="archive-grid">
 {{ARCHIVE_CARDS}}
       </div>
@@ -330,9 +331,9 @@ footer p { margin: 0; }
         <div>
           <h3>Status definitions</h3>
           <dl>
-            <dt>Open</dt><dd>An official page exposed a current intake or stated that requests could be submitted on the snapshot date.</dd>
-            <dt>Upcoming</dt><dd>An official page promised a future round, while an intake or application route was not yet available.</dd>
-            <dt>Closed</dt><dd>The named deadline passed or the official page said that intake was closed, even if the page remained available.</dd>
+            <dt>Open</dt><dd>Official evidence showed current intake and the modeled cycle remained outside the tracker’s 15-day lead-time archive fence.</dd>
+            <dt>Upcoming</dt><dd>Official evidence promised a future round that remained outside the archive fence, while intake or an application route was not yet available.</dd>
+            <dt>Archived</dt><dd>The sponsor closed intake, the named cycle passed, or the tracker’s inclusive 15-day lead-time policy moved the cycle out of the actionable view. Policy-retired cards carry a visible lifecycle reason; legacy archive cards may instead explain status in their deadline or verification notes.</dd>
           </dl>
         </div>
       </div>
@@ -401,7 +402,7 @@ footer p { margin: 0; }
   }
 
   function statusLabel(status) {
-    return {open: "Open", upcoming: "Upcoming", closed: "Closed"}[status] || status;
+    return {open: "Open", upcoming: "Upcoming", closed: "Archived"}[status] || status;
   }
 
   function appendText(parent, tag, className, text) {
@@ -437,7 +438,7 @@ footer p { margin: 0; }
     article.setAttribute("data-group", record.group);
     article.setAttribute("data-search", [
       record.program, record.provider, record.group_label, record.amount, record.deadline,
-      record.eligibility, record.endpoint_note
+      record.eligibility, record.endpoint_note, record.retirement_reason || ""
     ].join(" ").toLowerCase());
 
     var top = document.createElement("div");
@@ -461,6 +462,15 @@ footer p { margin: 0; }
       facts.appendChild(row);
     });
     article.appendChild(facts);
+    if (archived && record.retired_at && record.retirement_reason) {
+      var retirement = document.createElement("p");
+      retirement.className = "retirement";
+      var retirementLabel = document.createElement("strong");
+      retirementLabel.textContent = "Archived " + record.retired_at + ":";
+      retirement.appendChild(retirementLabel);
+      retirement.appendChild(document.createTextNode(" " + record.retirement_reason));
+      article.appendChild(retirement);
+    }
 
     var details = document.createElement("details");
     appendText(details, "summary", "", "Eligibility and verification notes");
@@ -472,7 +482,7 @@ footer p { margin: 0; }
 
     var actions = document.createElement("p");
     actions.className = "actions";
-    if (record.application_url) {
+    if (record.application_url && !archived) {
       var apply = document.createElement("a");
       apply.className = "button apply-link";
       apply.href = record.application_url;
@@ -527,12 +537,12 @@ footer p { margin: 0; }
     archiveGrid.replaceChildren();
     data.opportunities.filter(function (record) { return record.status === "closed"; })
       .forEach(function (record) { archiveGrid.appendChild(recordCard(record, true)); });
-    archiveSummary.textContent = "Archive — " + data.counts.closed + " closed or past-cycle calls";
+    archiveSummary.textContent = "Archive — " + data.counts.closed + " non-actionable records";
     closingHeading.textContent = "Recorded as closing within 10 days of " + data.page_date;
     var closing = data.opportunities.filter(function (record) { return record.closing_soon; });
     closingList.textContent = closing.length ? closing.map(function (record) {
       return record.program + " — " + record.next_deadline;
-    }).join(" · ") : "No records were marked as closing soon in this snapshot.";
+    }).join(" · ") : "No actionable records were marked as closing soon in this snapshot.";
     cards = Array.prototype.slice.call(document.querySelectorAll("article.card"));
     applyFilters();
   }
@@ -548,6 +558,11 @@ footer p { margin: 0; }
     });
     diffSummary.textContent = "Snapshot diff since previous reviewed snapshot: " + parts.join(" · ");
     diffSummary.hidden = false;
+  }
+
+  function snapshotLabel(item) {
+    var verifiedTime = item.verified_at ? item.verified_at.slice(11, 16) + " UTC" : item.snapshot_id.slice(-12);
+    return item.page_date + " at " + verifiedTime;
   }
 
   function loadHistoryIndex() {
@@ -567,7 +582,7 @@ footer p { margin: 0; }
         index.snapshots.forEach(function (item) {
           var option = document.createElement("option");
           option.value = item.snapshot_id;
-          option.textContent = item.page_date + (item.snapshot_id === index.current_snapshot_id ? " (latest recorded)" : "");
+          option.textContent = snapshotLabel(item) + (item.snapshot_id === index.current_snapshot_id ? " (latest recorded)" : "");
           snapshotSelect.appendChild(option);
         });
         return index;
@@ -593,7 +608,7 @@ footer p { margin: 0; }
       ]).then(function (loaded) {
         renderSnapshot(loaded[0]);
         renderDiff(loaded[1]);
-        snapshotStatus.textContent = "Showing reviewed snapshot " + item.page_date + ".";
+        snapshotStatus.textContent = "Showing reviewed snapshot " + snapshotLabel(item) + ".";
       });
     }).catch(function () {
       snapshotSelect.value = "current";

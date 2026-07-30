@@ -10,7 +10,9 @@ The inspected primary route normalizes its canonical and social URL to the slash
 
 ## Snapshot scope
 
-The canonical public dataset is a reviewed snapshot dated **2026-07-28** (`America/Los_Angeles`), with the completed collection verification timestamp **2026-07-29T04:27:05Z**. The configured Pacific date did not roll over. The dataset contains 32 public records: 22 open, 2 upcoming, and 8 closed. These are preserved snapshot facts, not a claim that the same statuses remain current today.
+The canonical public dataset is a reviewed snapshot dated **2026-07-29** (`America/Los_Angeles`), with collection verification timestamp **2026-07-30T01:16:56Z**. The configured Pacific date did not roll over. The dataset contains 48 public records: 32 actionable open, 1 actionable upcoming, and 15 archived. These are preserved snapshot facts, not a claim that the same statuses remain current today.
+
+A specific modeled cycle with an officially verified fixed applicant deadline on or before `page_date + 15 calendar days` is moved out of the actionable view. The boundary is inclusive and group-neutral. Policy archival is not a claim that the sponsor closed intake: the record preserves its official deadline and sources, removes its apply control, and shows a public `retirement_reason`. A continuously open program with recurring cutoffs advances to the next verified cutoff outside the fence rather than closing the whole program; a multi-element umbrella has no single fixed deadline.
 
 `data/opportunities.json` is the sole canonical current opportunity data file. Every stable ID remains present after publication; retirement is represented with lifecycle fields, not by deleting the record. Each current record carries `first_seen`, `last_verified`, `retired_at`, `retirement_reason`, `superseded_by`, and `reactivated_at`. The exact original 32-record dataset is preserved as the first immutable history snapshot at `data/history/snapshots/2026-07-28-a5af1ed92d34/`.
 
@@ -54,7 +56,7 @@ The standalone current JSON files are byte-identical to the latest recorded snap
 python3 -m unittest discover -s tests -v
 ```
 
-The standard-library test suite validates the public schema, original baseline hash and source commit, lifecycle invariants, recorder refusal paths, manifest transition logic, current/latest parity refusal, record and status counts, URL rules, public-field allowlist, privacy gates, embedded/standalone parity, exact host metadata and root-relative resource paths, semantic pre-rendering, self-contained assets, provenance digests, and safe two-checkout synchronization.
+The standard-library test suite validates the public schema, original baseline hash and source commit, the inclusive 15-day archive boundary, recurring and umbrella exceptions, lifecycle and repeated-reactivation invariants, recorder refusal paths, manifest transition logic, current/latest parity refusal, record and status counts, URL rules, public-field allowlist, privacy gates, embedded/standalone parity, server/browser archive rendering, exact host metadata and root-relative resource paths, self-contained assets, provenance digests, and safe two-checkout synchronization.
 
 ## Owner-controlled checkout synchronization
 

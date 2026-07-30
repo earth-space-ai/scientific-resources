@@ -175,6 +175,7 @@
           ]
         },
         "status": {
+          "description": "Tracker actionability state. closed renders as Archived and may mean sponsor closure, a past cycle, or an explicit lead-time-policy retirement documented by retirement_reason.",
           "enum": [
             "open",
             "upcoming",
@@ -190,6 +191,7 @@
           "minLength": 1
         },
         "next_deadline": {
+          "description": "Machine-readable applicant deadline or next relevant cutoff. An archived record may retain a future official date; a recurring program advances to the next still-actionable cutoff.",
           "anyOf": [
             {
               "type": "string",
@@ -201,6 +203,7 @@
           ]
         },
         "deadline_kind": {
+          "description": "Tracker deadline model. closed is synchronized with archived status and may retain a future next_deadline when retirement is policy-driven.",
           "enum": [
             "rolling",
             "fixed",
@@ -209,6 +212,7 @@
           ]
         },
         "closing_soon": {
+          "description": "Legacy 10-day presentation flag for actionable open records; it is false for every archived record and remains distinct from the 15-day archive gate.",
           "type": "boolean"
         },
         "eligibility": {
@@ -269,6 +273,7 @@
           "format": "date"
         },
         "retired_at": {
+          "description": "Review date when this stable ID moved into the tracker archive. A non-null value drives a retired manifest event and requires archived status plus a visible reason.",
           "anyOf": [
             {
               "type": "string",
@@ -280,6 +285,7 @@
           ]
         },
         "retirement_reason": {
+          "description": "Public human-readable reason that distinguishes sponsor closure, past-cycle retirement, and tracker lead-time archival while preserving the official deadline truth.",
           "anyOf": [
             {
               "type": "string",
@@ -307,6 +313,7 @@
           ]
         },
         "reactivated_at": {
+          "description": "Most recent review date when a previously archived stable ID returned to the actionable set. The value is preserved through a later retirement; immutable snapshots retain every event.",
           "anyOf": [
             {
               "type": "string",

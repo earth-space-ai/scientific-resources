@@ -20,26 +20,32 @@
 
 A factual refresh must be a deliberate, reviewed data change:
 
-1. Check each record against its official source pages. Treat endpoint availability separately from named-program status.
-2. Update only public fields defined by the schema. Add a record only after assigning a new stable ID. Never remove an already published ID; close and retire it with lifecycle fields when a named call is intentionally no longer active.
-3. Set `page_date`, collection `verified_at`, and per-record verification values to the actual review dates. Set `first_seen` for new records, update `last_verified` with the record's `verified_date`, and record `retired_at`, `retirement_reason`, `superseded_by`, or `reactivated_at` only for actual lifecycle transitions. Never advance dates merely because a build runs.
-4. Recompute declared counts and `closing_soon` values from the reviewed data.
-5. Append exactly one immutable history snapshot for the reviewed current data. For the next parent candidate-data integration, run:
+1. Check every record against official source pages; do not inspect only a seed list or the `grants` group. Treat endpoint availability, sponsor intake and tracker actionability as separate facts.
+2. Calculate the inclusive actionability cutoff from the actual Pacific `page_date`: `cutoff = page_date + 15 calendar days`. For each open/upcoming fixed-cycle record, verify the machine date, sponsor wording and timezone. Day `+15` must be archived; day `+16` may remain actionable. Overdue fixed dates are not actionable.
+3. Use only applicant-controlled final deadlines. Exclude review, decision, notification, publication and processing dates. A current fixed record with no machine date is release-blocking until it is corrected or explicitly modeled as `tbd`.
+4. For a qualifying specific cycle, preserve the stable ID, official deadline, machine date and source evidence; set `status=closed`, `deadline_kind=closed`, `retired_at=page_date`, and a public reason that distinguishes tracker policy from sponsor closure; clear `application_url`, `apply_label` and `closing_soon`.
+5. Do not close a continuously open program because one recurring cutoff enters the fence. Advance `next_deadline` to the next officially verified cutoff outside the fence. Model a multi-element umbrella as `tbd` with no single machine deadline; create element-level stable IDs before treating individual elements as actionable cycles.
+6. Add a record only after assigning a new stable ID. Never remove an already published ID. Use retirement or supersession lifecycle fields instead of disappearance.
+7. Set `page_date`, collection `verified_at`, and per-record verification values to actual review dates. Set `first_seen` for new records and update `last_verified` with `verified_date`. Never advance dates merely because a build runs.
+8. Reactivation is an audited transition: clear retirement fields, restore actionable status/kind/route/deadline, and set a fresh `reactivated_at=page_date`. Preserve that reactivation date if the record is later retired again. Distinct named cycles should normally receive distinct stable IDs.
+9. Recompute declared counts and the separate 10-day `closing_soon` presentation flag from reviewed data.
+10. Before writing history, run semantic validation and inspect the prospective manifest. A real archive transition must be `retired`, not merely `changed`; a real reactivation must be `reactivated`; recurring-cutoff and umbrella corrections are ordinary `changed` events.
+11. Append exactly one immutable history snapshot for the reviewed current data. For the next parent candidate-data integration, run:
 
    ```sh
    python3 src/record_snapshot.py --expected-page-date 2026-07-29
    ```
 
-   The recorder refuses overwrite, missing previously published IDs, invalid lifecycle state, and non-canonical JSON.
-6. Run the generator and the complete tests:
+   The recorder refuses overwrite, missing previously published IDs, invalid lifecycle state, fabricated transition events, and non-canonical JSON.
+12. Run the generator and the complete tests:
 
    ```sh
    python3 src/generate.py
    python3 -m unittest discover -s tests -v
    ```
 
-7. Inspect the data, `data/history/index.json`, the new snapshot directory, and generated changes. Confirm source URLs, application URLs, status counts, lifecycle transitions, canonical/alternate metadata, exact root-relative resource paths, and provenance digests.
-8. Run the complete test suite again before release.
+13. Inspect the data, `data/history/index.json`, the new snapshot directory, and generated changes. Confirm source URLs, application URLs, status counts, lifecycle transitions, canonical/alternate metadata, exact root-relative resource paths, and provenance digests.
+14. Run the complete test suite again before release.
 
 The original baseline hash assertion is a review tripwire for history immutability. An intentional factual refresh appends a new snapshot instead of changing existing history.
 
@@ -73,18 +79,18 @@ python3 src/sync_checkouts.py \
   --mirror-checkout /path/to/mirror-checkout
 ```
 
-The plan validates both Git roots, clean pre-states, build inputs, destination types, and symlink safety. It prints six source-to-destination operations and their SHA-256 values but writes nothing.
+The plan validates both Git roots, clean pre-states, build inputs, destination types, and symlink safety. It derives a complete allowlist from every regular generated file in the selected `dist/primary/` and `dist/mirror/` profiles, then prints each source-to-destination operation and its SHA-256 value without writing anything. The operation count therefore grows with immutable history; this four-snapshot release plans 12 paths per host, 24 total.
 
-### Apply the exact file pair
+### Apply the exact generated path set
 
-After review, repeat the command with `--apply`. The helper performs only these copies:
+After review, repeat the command with `--apply`. The helper performs only the planned generated-path copies:
 
 | Build profile | Destination checkout directory | Exact files |
 |---|---|---|
 | `dist/primary/` | `<primary>/public/scientific-resources/` | `index.html`, `public_opportunities.json`, `provenance.json`, `snapshots/...` |
 | `dist/mirror/` | `<mirror>/scientific-resources/` | `index.html`, `public_opportunities.json`, `provenance.json`, `snapshots/...` |
 
-It never deletes a file and has no cleanup or deployment mode. After copying, it requires each checkout's Git status to contain no path outside its exact three-file allowlist. It then proves every destination file is byte-identical to, and has the same SHA-256 as, the selected primary or mirror build profile. A dirty pre-state, unsafe destination, collateral path, wrong profile, missing output, or parity failure is an error.
+It never deletes a file and has no cleanup or deployment mode. After copying, it requires each checkout's Git status to contain no path outside the complete generated-path allowlist derived for that host profile. It then proves every destination file is byte-identical to, and has the same SHA-256 as, the selected primary or mirror build profile. A dirty pre-state, unsafe destination, collateral path, wrong profile, missing output, or parity failure is an error.
 
 The helper does not commit, push, publish, or contact a remote service. The owner reviews the two destination diffs, commits them through each host's normal process, and pauses if both hosts cannot be advanced together.
 

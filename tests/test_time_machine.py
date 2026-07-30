@@ -103,9 +103,13 @@ class TimeMachineTests(unittest.TestCase):
 
         current = json.loads(json.dumps(self.current))
         target = current["opportunities"][0]
-        target["retired_at"] = "2026-07-29"
+        target["retired_at"] = current["page_date"]
         target["retirement_reason"] = "Official page ended the named call."
         target["status"] = "closed"
+        target["deadline_kind"] = "closed"
+        target["closing_soon"] = False
+        target["application_url"] = None
+        target["apply_label"] = None
         manifest = generate.diff_snapshots(previous, current, "test")
         self.assertEqual(manifest["counts"]["retired"], 1)
 
@@ -144,7 +148,7 @@ class TimeMachineTests(unittest.TestCase):
             copy_original_only_history(history)
             data = temp_root / "opportunities.json"
             payload = json.loads(json.dumps(self.current))
-            fixture_date = next_date(max(record["first_seen"] for record in payload["opportunities"]))
+            fixture_date = max(record["first_seen"] for record in payload["opportunities"])
             fixture_timestamp = f"{fixture_date}T12:00:00Z"
             payload["page_date"] = fixture_date
             payload["verified_at"] = fixture_timestamp

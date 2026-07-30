@@ -31,7 +31,9 @@ GROUP_LABELS = {
     "hpc": "HPC & GPU allocations",
     "grants": "AI-for-science & open-science grants",
 }
-STATUS_LABELS = {"open": "Open", "upcoming": "Upcoming", "closed": "Closed"}
+STATUS_LABELS = {"open": "Open", "upcoming": "Upcoming", "closed": "Archived"}
+ARCHIVE_LEAD_DAYS = 15
+CLOSING_SOON_DAYS = 10
 RECORD_FIELDS = {
     "id",
     "program",
@@ -132,13 +134,14 @@ def validate_lifecycle(record: dict, label: str) -> None:
 
     retired_at = record["retired_at"]
     retirement_reason = record["retirement_reason"]
+    retired_date = None
     if retired_at is None:
         if retirement_reason is not None:
             raise ValueError(f"{label} retirement_reason requires retired_at")
     else:
         retired_date = parse_date(retired_at, f"{label}.retired_at")
-        if retired_date < first_seen:
-            raise ValueError(f"{label} retired_at must not be before first_seen")
+        if retired_date < first_seen or retired_date > last_verified:
+            raise ValueError(f"{label} retired_at must fall between first_seen and last_verified")
         if record["status"] != "closed":
             raise ValueError(f"{label} retired records must remain status=closed")
         if not isinstance(retirement_reason, str) or not retirement_reason.strip():
@@ -155,10 +158,10 @@ def validate_lifecycle(record: dict, label: str) -> None:
     reactivated_at = record["reactivated_at"]
     if reactivated_at is not None:
         reactivated_date = parse_date(reactivated_at, f"{label}.reactivated_at")
-        if reactivated_date < first_seen:
-            raise ValueError(f"{label} reactivated_at must not be before first_seen")
-        if retired_at is not None and reactivated_date < parse_date(retired_at, f"{label}.retired_at"):
-            raise ValueError(f"{label} reactivated_at must not be before retired_at")
+        if reactivated_date < first_seen or reactivated_date > last_verified:
+            raise ValueError(f"{label} reactivated_at must fall between first_seen and last_verified")
+        if retired_date is not None and reactivated_date > retired_date:
+            raise ValueError(f"{label} reactivated_at must not be after retired_at while retired")
 
 
 def validate_public_data(
@@ -205,7 +208,8 @@ def validate_public_data(
     if expected_status_counts is not None and status_counts(records) != expected_status_counts:
         raise ValueError("history snapshot status counts must match its index summary")
 
-    soon_cutoff = snapshot + timedelta(days=10)
+    archive_cutoff = snapshot + timedelta(days=ARCHIVE_LEAD_DAYS)
+    soon_cutoff = snapshot + timedelta(days=CLOSING_SOON_DAYS)
     for index, record in enumerate(records):
         label = f"opportunities[{index}]"
         fields = set(record)
@@ -228,6 +232,22 @@ def validate_public_data(
 
         next_deadline = record["next_deadline"]
         parsed_deadline = parse_date(next_deadline, f"{label}.next_deadline") if next_deadline else None
+        if not allow_legacy_lifecycle:
+            status_is_archived = record["status"] == "closed"
+            kind_is_archived = record["deadline_kind"] == "closed"
+            if status_is_archived != kind_is_archived:
+                raise ValueError(f"{label} must keep status=closed and deadline_kind=closed in sync")
+            if record["deadline_kind"] == "fixed" and parsed_deadline is None:
+                raise ValueError(f"{label} fixed deadlines require a machine-readable next_deadline")
+            if (
+                record["status"] in {"open", "upcoming"}
+                and record["deadline_kind"] == "fixed"
+                and parsed_deadline is not None
+                and parsed_deadline <= archive_cutoff
+            ):
+                raise ValueError(
+                    f"{label} fixed deadline falls inside the inclusive {ARCHIVE_LEAD_DAYS}-day archive fence"
+                )
         expected_soon = bool(
             record["status"] == "open" and parsed_deadline and parsed_deadline <= soon_cutoff
         )
@@ -271,6 +291,55 @@ def substantive_changed_fields(previous: dict, current: dict) -> list[str]:
     return [field for field in fields if previous.get(field) != current.get(field)]
 
 
+def validate_lifecycle_transition(previous: dict, current: dict, review_date: str) -> None:
+    """Reject fabricated or internally inconsistent retirement/reactivation events."""
+    record_id = current["id"]
+    previous_retired = previous.get("retired_at")
+    current_retired = current.get("retired_at")
+    previous_reactivated = previous.get("reactivated_at")
+    current_reactivated = current.get("reactivated_at")
+
+    if previous_retired and current_retired and previous_retired != current_retired:
+        raise ValueError(f"{record_id} cannot rewrite an existing retirement date")
+
+    if not previous_retired and current_retired:
+        if current_reactivated != previous_reactivated:
+            raise ValueError(f"{record_id} retirement cannot fabricate or rewrite a reactivation date")
+        if current_retired != review_date:
+            raise ValueError(f"{record_id} retirement date must match the current review date")
+        if current["status"] != "closed" or current["deadline_kind"] != "closed":
+            raise ValueError(f"{record_id} retirement requires archived status and deadline kind")
+        if not current.get("retirement_reason"):
+            raise ValueError(f"{record_id} retirement requires a visible reason")
+        if current.get("application_url") or current.get("apply_label") or current.get("closing_soon"):
+            raise ValueError(f"{record_id} retirement must remove actionable controls and flags")
+
+    elif previous_retired and not current_retired:
+        if current["status"] not in {"open", "upcoming"} or current["deadline_kind"] == "closed":
+            raise ValueError(f"{record_id} reactivation requires an actionable status and deadline kind")
+        if current.get("retirement_reason") is not None:
+            raise ValueError(f"{record_id} reactivation must clear the retirement reason")
+        if current_reactivated != review_date or current_reactivated == previous_reactivated:
+            raise ValueError(f"{record_id} reactivation date must be newly set to the review date")
+
+    elif current_reactivated != previous_reactivated:
+        if current_reactivated is None:
+            raise ValueError(f"{record_id} cannot erase a recorded reactivation date")
+        if current_retired:
+            raise ValueError(f"{record_id} cannot manufacture reactivation while still retired")
+        if previous.get("status") != "closed" or current["status"] not in {"open", "upcoming"}:
+            raise ValueError(f"{record_id} reactivation requires a real archived-to-actionable transition")
+        if current["deadline_kind"] == "closed" or current.get("retirement_reason") is not None:
+            raise ValueError(f"{record_id} reactivation must restore actionable lifecycle fields")
+        if current_reactivated != review_date:
+            raise ValueError(f"{record_id} reactivation date must match the current review date")
+
+    elif previous.get("status") in {"open", "upcoming"} and current["status"] == "closed":
+        raise ValueError(f"{record_id} actionable-to-archived transition requires retired_at")
+    elif previous.get("status") == "closed" and current["status"] in {"open", "upcoming"}:
+        raise ValueError(f"{record_id} archived-to-actionable transition requires a fresh reactivated_at")
+
+
 def diff_snapshots(previous: dict | None, current: dict, snapshot_id: str) -> dict:
     current_by_id = {record["id"]: record for record in current["opportunities"]}
     previous_by_id = {record["id"]: record for record in previous["opportunities"]} if previous else {}
@@ -287,6 +356,7 @@ def diff_snapshots(previous: dict | None, current: dict, snapshot_id: str) -> di
             change_type = "added"
             changed_fields: list[str] = []
         else:
+            validate_lifecycle_transition(previous_record, current_record, current["page_date"])
             changed_fields = substantive_changed_fields(previous_record, current_record)
             was_retired = bool(previous_record.get("retired_at"))
             is_retired = bool(current_record.get("retired_at"))
@@ -487,16 +557,25 @@ def card_html(record: dict, archived: bool = False) -> str:
         badges.append(f'<span class="badge badge-group">{esc(record["group_label"])}</span>')
 
     actions = []
-    if record["application_url"]:
+    if record["application_url"] and not archived:
         actions.append(
             f'<a class="button apply-link" href="{esc(record["application_url"])}" rel="noopener">'
             f'{esc(record["apply_label"])}<span aria-hidden="true"> ↗</span></a>'
         )
     actions.append(source_links(record))
     search_blob = " ".join(
-        str(record[key])
-        for key in ("program", "provider", "group_label", "amount", "deadline", "eligibility", "endpoint_note")
+        str(record.get(key) or "")
+        for key in (
+            "program", "provider", "group_label", "amount", "deadline", "eligibility",
+            "endpoint_note", "retirement_reason",
+        )
     ).lower()
+    retirement_line = ""
+    if archived and record.get("retired_at") and record.get("retirement_reason"):
+        retirement_line = (
+            f'  <p class="retirement"><strong>Archived {esc(record["retired_at"])}:</strong> '
+            f'{esc(record["retirement_reason"])}</p>\n'
+        )
     return f'''<article class="card card-{status}" id="card-{esc(record["id"])}" data-status="{status}" data-group="{record["group"]}" data-search="{esc(search_blob)}">
   <div class="card-top">
     <p class="provider">{esc(record["provider"])}</p>
@@ -507,7 +586,7 @@ def card_html(record: dict, archived: bool = False) -> str:
     <div><dt>Resources</dt><dd>{esc(record["amount"])}</dd></div>
     <div><dt>Deadline</dt><dd>{esc(record["deadline"])}</dd></div>
   </dl>
-  <details>
+{retirement_line}  <details>
     <summary>Eligibility and verification notes</summary>
     <p><strong>Eligibility:</strong> {esc(record["eligibility"])}</p>
     <p>{esc(record["endpoint_note"])}</p>
@@ -538,6 +617,8 @@ def active_sections(records: list[dict]) -> str:
 
 def closing_soon_html(records: list[dict]) -> str:
     records = sorted((record for record in records if record["closing_soon"]), key=lambda item: item["next_deadline"])
+    if not records:
+        return "No actionable records were marked as closing soon in this snapshot."
     return " · ".join(
         f'<a href="#card-{esc(record["id"])}">{esc(record["program"])} — '
         f'<time datetime="{esc(record["next_deadline"])}">{esc(record["next_deadline"])}</time></a>'
