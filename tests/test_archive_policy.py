@@ -40,9 +40,27 @@ class ArchivePolicyTests(unittest.TestCase):
 
     def test_current_dataset_matches_reviewed_policy_decision(self) -> None:
         generate.validate_public_data(self.data)
-        self.assertEqual(self.data["counts"], {"total": 48, "open": 32, "upcoming": 1, "closed": 15})
+        self.assertEqual(self.data["counts"], {"total": 54, "open": 38, "upcoming": 1, "closed": 15})
         self.assertEqual(sum(record["closing_soon"] for record in self.data["opportunities"]), 0)
-        self.assertEqual(sum(bool(record["application_url"]) for record in self.data["opportunities"]), 31)
+        self.assertEqual(sum(bool(record["application_url"]) for record in self.data["opportunities"]), 37)
+        expected_added_nsf = {
+            "nsf-shine-22-570": ("fixed", "2026-10-07"),
+            "nsf-plasma-physics-23-615": ("fixed", "2026-11-16"),
+            "nsf-gem-22-537": ("fixed", "2026-09-30"),
+            "nsf-geospace-cluster-ags-gc": ("rolling", None),
+            "nsf-aag-22-624": ("fixed", "2026-11-16"),
+            "nsf-cedar-25-510": ("fixed", "2027-03-03"),
+        }
+        for record_id, (deadline_kind, next_deadline) in expected_added_nsf.items():
+            record = self.by_id[record_id]
+            self.assertEqual(record["status"], "open")
+            self.assertEqual(record["deadline_kind"], deadline_kind)
+            self.assertEqual(record["next_deadline"], next_deadline)
+            self.assertEqual(record["first_seen"], "2026-07-29")
+            self.assertEqual(record["application_url"], "https://www.research.gov/")
+            self.assertIsNone(record["retired_at"])
+        self.assertIn("target date, not a hard deadline", self.by_id["nsf-shine-22-570"]["endpoint_note"])
+        self.assertIn("not a Plasma-specific allocation", self.by_id["nsf-plasma-physics-23-615"]["endpoint_note"])
         expected_retired = {
             "access-maximize-2026-july",
             "anthropic-rare-disease-research-grants-2026",
@@ -345,6 +363,11 @@ class ArchivePolicyTests(unittest.TestCase):
     def test_browser_renderer_contains_matching_archive_contract(self) -> None:
         template = (ROOT / "src" / "template.html").read_text(encoding="utf-8")
         self.assertIn('closed: "Archived"', template)
+        self.assertIn('data-status="closed"', template)
+        self.assertIn('Archived ({{CLOSED_COUNT}})', template)
+        self.assertIn('archiveSummary.addEventListener("click"', template)
+        self.assertIn('archiveNav.addEventListener("click"', template)
+        self.assertIn('selectedStatus === "closed"', template)
         self.assertIn('record.retirement_reason || ""', template)
         self.assertIn("Archived \" + record.retired_at + \":\"", template)
         self.assertIn("record.application_url && !archived", template)

@@ -281,6 +281,7 @@ footer p { margin: 0; }
           <button type="button" data-status="active" aria-pressed="true">Open + upcoming</button>
           <button type="button" data-status="open" aria-pressed="false">Open</button>
           <button type="button" data-status="upcoming" aria-pressed="false">Upcoming</button>
+          <button type="button" data-status="closed" aria-pressed="false">Archived ({{CLOSED_COUNT}})</button>
           <button type="button" data-status="all" aria-pressed="false">All</button>
         </div>
       </div>
@@ -367,8 +368,11 @@ footer p { margin: 0; }
   var snapshotDate = document.getElementById("snapshot-date");
   var snapshotTimezone = document.getElementById("snapshot-timezone");
   var recordsRoot = document.getElementById("records-root");
+  var archive = document.getElementById("archive");
   var archiveGrid = document.getElementById("archive-grid");
   var archiveSummary = document.getElementById("archive-summary");
+  var archiveFilter = document.querySelector('button[data-status="closed"]');
+  var archiveNav = document.querySelector('.jump-nav a[href="#archive"]');
   var closingHeading = document.getElementById("closing-heading");
   var closingList = document.getElementById("closing-soon-list");
   var currentData = JSON.parse(document.getElementById("dataset").textContent);
@@ -538,6 +542,7 @@ footer p { margin: 0; }
     data.opportunities.filter(function (record) { return record.status === "closed"; })
       .forEach(function (record) { archiveGrid.appendChild(recordCard(record, true)); });
     archiveSummary.textContent = "Archive — " + data.counts.closed + " non-actionable records";
+    archiveFilter.textContent = "Archived (" + data.counts.closed + ")";
     closingHeading.textContent = "Recorded as closing within 10 days of " + data.page_date;
     var closing = data.opportunities.filter(function (record) { return record.closing_soon; });
     closingList.textContent = closing.length ? closing.map(function (record) {
@@ -618,20 +623,37 @@ footer p { margin: 0; }
     });
   }
 
+  function selectStatus(status) {
+    selectedStatus = status;
+    buttons.forEach(function (item) {
+      item.setAttribute("aria-pressed", String(item.getAttribute("data-status") === status));
+    });
+    applyFilters();
+  }
+
   buttons.forEach(function (button) {
     button.addEventListener("click", function () {
-      selectedStatus = button.getAttribute("data-status");
-      buttons.forEach(function (item) { item.setAttribute("aria-pressed", String(item === button)); });
-      if (selectedStatus === "all") document.getElementById("archive").open = true;
-      applyFilters();
+      selectStatus(button.getAttribute("data-status"));
+      if (selectedStatus === "closed" || selectedStatus === "all") {
+        archive.open = true;
+      } else {
+        archive.open = false;
+      }
+      if (selectedStatus === "closed") archive.scrollIntoView({block: "start"});
     });
+  });
+  archiveSummary.addEventListener("click", function () {
+    if (!archive.open && selectedStatus !== "closed" && selectedStatus !== "all") selectStatus("closed");
+  });
+  archiveNav.addEventListener("click", function () {
+    selectStatus("closed");
+    archive.open = true;
   });
   search.addEventListener("input", applyFilters);
   clear.addEventListener("click", function () {
     search.value = "";
-    selectedStatus = "active";
-    buttons.forEach(function (item, index) { item.setAttribute("aria-pressed", String(index === 0)); });
-    applyFilters();
+    selectStatus("active");
+    archive.open = false;
     search.focus();
   });
   snapshotSelect.addEventListener("focus", loadHistoryIndex);
